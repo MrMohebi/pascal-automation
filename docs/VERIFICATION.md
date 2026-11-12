@@ -7,7 +7,7 @@
 - Added mock-GPIO tests for both trigger polarities: each pin receives its OFF level before output mode, all 16 command combinations map correctly, and no extra pins are written. These passed alongside the 27 controller scenarios, simulated zero-GPIO checks, configuration serialization, and storage tests. Mock tests do not prove relay contact behavior or reset-time electrical levels.
 - Built and uploaded 1,334,896 bytes in eleven verified blocks, followed by full-image verification. SHA-256: `bccd72f03c907bc101bd7f2de60d7ee92c552252153ec4d9384652bfaa024a40`. The running firmware MD5 matched: `edab93f98479fa87029ce066f0575684`. The existing partition table matched, and NVS was preserved.
 - The actual board reported `simulated:false`, successful HTTPS sync to the configured server, healthy sensor/OLED/storage, no faults, and unchanged revision 1/settings. The owner's automation-disabled setting was preserved, with all four commanded states OFF. Sensor sample: 23.8 °C / 34.2% RH.
-- Physical relay-indicator and light ON/OFF confirmation was requested with appliances disconnected. Do not treat commanded output states as measured relay/contact feedback. Private flash logs and snapshots are under ignored `secrets/flash-live-relays/`.
+- With mains appliances still disconnected, the owner confirmed the initial relay indicators were OFF and both light relays (channels 3 and 4) clicked and followed dashboard ON/OFF commands after enabling automatic control. Actual heating/humidification and mains contact/load behavior were not measured. Do not treat commanded output states as continuous relay/contact feedback. Private flash logs and snapshots are under ignored `secrets/flash-live-relays/`.
 
 ## Live server provisioning and USB flash — 2026-11-12
 
