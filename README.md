@@ -2,7 +2,9 @@
 
 ESP32 terrarium monitoring and control, with a 128×64 status OLED, and a private web dashboard.
 
-**The shipped firmware is simulated: it never configures or writes the four relay GPIOs.** The DHT22, OLED, storage, Wi-Fi, and HTTPS synchronization are real. No husbandry targets are included. Four of the eight relay channels are reserved and have no assigned GPIOs.
+**The default `esp32dev` build is simulated: it never configures or writes the four relay GPIOs.** The `esp32dev-relays` build drives the owner's confirmed active-HIGH relay inputs on GPIO25/26/27/14. The DHT22, OLED, storage, Wi-Fi, and HTTPS synchronization are real. No husbandry targets are included. Four of the eight relay channels are reserved and have no assigned GPIOs.
+
+For the commissioned relay hardware, build with `pio run -e esp32dev-relays` and upload with `pio run -e esp32dev-relays -t upload --upload-port /dev/cu.usbserial-0001`. This build requires the relay compatibility and independent heater protection described in [commissioning](docs/COMMISSIONING.md). Its OLED says **LIVE** and the dashboard removes the simulated label after synchronization. The saved **Enable automatic control** setting still controls whether outputs run.
 
 ## Start here
 

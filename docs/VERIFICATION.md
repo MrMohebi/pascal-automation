@@ -1,5 +1,14 @@
 # Verification
 
+## Live relay firmware — 2026-11-12
+
+- The owner confirmed installation of an independent heater thermostat and overheat cutoff, active-HIGH inputs on the 5 V eight-channel relay module, 3.3 V input compatibility, and disconnected mains appliances for initial checks.
+- Added the explicit `esp32dev-relays` build with physical outputs enabled and active-HIGH polarity. The default `esp32dev` build remains simulated. GPIO25/26/27/14 retain their heater/humidifier/light 1/light 2 assignments.
+- Added mock-GPIO tests for both trigger polarities: each pin receives its OFF level before output mode, all 16 command combinations map correctly, and no extra pins are written. These passed alongside the 27 controller scenarios, simulated zero-GPIO checks, configuration serialization, and storage tests. Mock tests do not prove relay contact behavior or reset-time electrical levels.
+- Built and uploaded 1,334,896 bytes in eleven verified blocks, followed by full-image verification. SHA-256: `bccd72f03c907bc101bd7f2de60d7ee92c552252153ec4d9384652bfaa024a40`. The running firmware MD5 matched: `edab93f98479fa87029ce066f0575684`. The existing partition table matched, and NVS was preserved.
+- The actual board reported `simulated:false`, successful HTTPS sync to the configured server, healthy sensor/OLED/storage, no faults, and unchanged revision 1/settings. The owner's automation-disabled setting was preserved, with all four commanded states OFF. Sensor sample: 23.8 °C / 34.2% RH.
+- Physical relay-indicator and light ON/OFF confirmation was requested with appliances disconnected. Do not treat commanded output states as measured relay/contact feedback. Private flash logs and snapshots are under ignored `secrets/flash-live-relays/`.
+
 ## Live server provisioning and USB flash — 2026-11-12
 
 - Built and flashed the token-free firmware to the attached ESP32-D0WD-V3. Rechecked GPIO4 DHT22, OLED SDA21/SCL22, relay assignment 25/26/27/14, simulation-only build, and the installed partition table before writing the application.

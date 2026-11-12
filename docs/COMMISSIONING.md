@@ -13,7 +13,7 @@
 
 ## Before any physical appliance activation
 
-The heater is a bare element without a thermostat. An ESP32, one DHT22, and a general-purpose relay are not an independent safety system. Relay contacts can stick closed, and a valid-looking sensor reading can still be wrong. Fit an appropriately rated independent thermostat and overtemperature cutoff, with suitable sensor placement, before unattended use. Have the mains assembly, enclosure, grounding, strain relief, fusing, moisture protection, and load ratings checked by a qualified person.
+The heater was originally described as a bare element without a thermostat. On 2026-11-12 the owner confirmed an independent thermostat and overheat cutoff are now installed. An ESP32, one DHT22, and a general-purpose relay are not an independent safety system. Relay contacts can stick closed, and a valid-looking sensor reading can still be wrong. Keep the independent thermostat and overtemperature cutoff installed, with suitable sensor placement. Have the mains assembly, enclosure, grounding, strain relief, fusing, moisture protection, and load ratings checked by a qualified person.
 
 Identify the relay board model, coil supply, HIGH/LOW trigger mode, input voltage/current, isolation arrangement, and contact ratings for each actual load (including light/humidifier inrush). Separate COM/NO/NC contacts do not establish logic-side isolation. Use normally-open load paths so de-energized relays are off, and hardware input bias/driver circuitry that keeps them off while ESP32 pins are floating during reset or power loss. Verify this with loads disconnected.
 
@@ -22,11 +22,11 @@ Only after those checks should a separate commissioned build explicitly set all 
 ```ini
 build_flags =
     -DPASCAL_ENABLE_RELAYS=1
-    -DPASCAL_RELAY_ACTIVE_LOW=1
+    -DPASCAL_RELAY_ACTIVE_LOW=0
     -DPASCAL_HARDWARE_COMMISSIONED=1
 ```
 
-The `ACTIVE_LOW=1` line is an example, not a determination about your board; select the polarity established by measurement. Keep the repository's default build simulated. These flags are a deliberate commissioning boundary, not a claim that software can verify installed protection. The dashboard cannot enable physical mode remotely.
+The owner confirmed a 5 V, eight-channel relay module with **active-HIGH, 3.3 V-compatible inputs**, and disconnected mains appliances for the initial relay checks. The named `esp32dev-relays` environment uses these flags; GPIO LOW is OFF and GPIO HIGH (3.3 V) is ON. These values apply to this confirmed setup, not every 5 V relay board. The repository's default build remains simulated. These flags are a deliberate commissioning boundary, not a claim that software can verify installed protection. The dashboard cannot enable physical mode remotely.
 
 Verify there is no relay pulse during power-up, reset, programming, brownout, missing sensor, missing saved schedule and invalid clock, or a watchdog reset. Confirm spare channels stay off. Measure actual appliance operation and cutoff behavior separately from GPIO/indicator state. Supervise initial operation with an independent thermometer; one ambient sensor cannot characterize the entire enclosure or basking surface.
 

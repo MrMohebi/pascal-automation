@@ -16,7 +16,7 @@ This is the owner's installed wiring for the **ESP32-WROOM-32**. The keypad has 
 
 Firmware assignments are centralized in [`include/board_pins.h`](../include/board_pins.h). Use GPIO labels rather than counting pins from an assumed USB orientation. The other four relay channels have no assigned GPIO.
 
-Disconnect all power before changing wiring. The default firmware still simulates relay commands and does not configure or write the relay GPIOs. The assigned ports do not establish input polarity, logic compatibility, or heater protection; see [commissioning](COMMISSIONING.md) before physical switching.
+Disconnect all power before changing wiring. The default `esp32dev` firmware simulates relay commands and does not configure or write the relay GPIOs. The commissioned `esp32dev-relays` build drives these four pins: LOW is OFF and HIGH (3.3 V) is ON for the owner's confirmed active-HIGH inputs. The relay module has a separate 5 V supply rating; do not feed 5 V into an ESP32 GPIO. See [commissioning](COMMISSIONING.md) for the confirmed hardware details and physical checks.
 
 A bare four-pin DHT22 needs a DATA pull-up, normally 4.7–10 kΩ to **3V3**. Verify its labelled pinout before connecting it; the unused sensor pin stays disconnected. Breakout boards may include the pull-up. Keep the sensor away from direct mist, heater radiation, and ESP32 heat. A single sensor does not measure every point in the enclosure.
 
