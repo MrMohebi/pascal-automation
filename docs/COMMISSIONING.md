@@ -3,7 +3,7 @@
 ## Simulated stage
 
 1. Keep all mains loads and relay inputs disconnected. Confirm `PASCAL_ENABLE_RELAYS=0` in PlatformIO.
-2. Confirm `simulated:true`, a readable 128×64 display on SDA21/SCL22, and DHT22 DATA on GPIO17. Verify DHT readings against an independent instrument at the sensor location.
+2. Confirm `simulated:true`, a readable 128×64 display on SDA21/SCL22, and DHT22 DATA on GPIO4. Verify DHT readings against an independent instrument at the sensor location.
 3. Enter actual, confirmed husbandry targets and schedules; do not use unit-test fixture values as care guidance. Test with automation disabled, then inspect simulated control decisions.
 4. Disconnect the sensor: all commanded outputs should turn off. Reconnect: three consecutive valid readings are required before operation can resume.
 5. Test night/day changes, midnight-crossing schedules, both saved light selections, and return to Auto. Verify cold boot without network restores the saved profile/light states after sensor recovery; establish time and verify schedules resume.

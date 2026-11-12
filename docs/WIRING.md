@@ -4,7 +4,7 @@ This is the owner's installed wiring for the **ESP32-WROOM-32**. The keypad has 
 
 | Connection | ESP32 GPIO / supply | Header position in supplied diagram |
 |---|---|---|
-| DHT22 DATA | **17** | J2-11 |
+| DHT22 DATA | **4** | J2-13 |
 | OLED SDA | **21** | J2-6 |
 | OLED SCL | **22** | J2-3 |
 | Relay 1 — heater | **25** | J1-9 |

@@ -6,7 +6,7 @@ ESP32 terrarium monitoring and control, with a 128×64 status OLED, and a privat
 
 ## Start here
 
-**Current wiring (layout v3):** DHT22 DATA **17**, OLED SDA **21** / SCL **22**, heater/humidifier/light 1/light 2 **25 / 26 / 27 / 14**. There is no keypad. Configure through the web dashboard; the display only shows status and saved settings.
+**Current wiring (layout v3):** DHT22 DATA **4**, OLED SDA **21** / SCL **22**, heater/humidifier/light 1/light 2 **25 / 26 / 27 / 14**. There is no keypad. Configure through the web dashboard; the display only shows status and saved settings.
 
 1. Follow [low-voltage wiring](docs/WIRING.md). Leave every mains appliance disconnected during assembly and tests.
 2. Build and upload using PlatformIO:
@@ -55,7 +55,7 @@ ESP32 terrarium monitoring and control, with a 128×64 status OLED, and a privat
 
 The web dashboard is the settings interface. Save climate thresholds, schedules, limits, and automation enable/disable there. Light controls offer **Auto / On / Off**. Changes remain pending until the ESP32 confirms that it saved them; an undelivered or expired request does not replace the last acknowledged state. When the device reconnects, the server displays the device's saved state rather than replaying stale pending commands.
 
-The 128×64 SSD1306 OLED is read-only. Every six seconds it cycles through live status, climate settings, light selections/schedules, and safety limits/faults. It shows commanded output states, Wi-Fi/server status, storage health, and **Using saved schedule** when the clock is unavailable. There are no keys or on-device menus.
+The 128×64 SSD1306 OLED is read-only and rotates pages every five seconds: temperature, humidity, heater/humidifier states, light states, connection status, and the active temperature/humidity targets. Readings use 3× text; output states and targets use 2× text. Small headings and a page counter provide context. Detailed schedules and safety settings stay on the dashboard. Faults interrupt the pages with a stopped-output warning. There are no keys or on-device menus.
 
 ## Development and checks
 

@@ -1,5 +1,14 @@
 # Verification
 
+## GPIO4 correction and larger OLED pages — 2026-11-12
+
+- The owner corrected the sensor connection to GPIO4 (J2-13) and confirmed the 128×64 OLED is readable. Wiring documentation and firmware now match GPIO4.
+- OLED content is reduced to separate, automatically rotating pages every five seconds. Temperature/humidity readings use text size 3; output states and active targets use size 2. Detailed schedules and limits remain on the web dashboard. Faults take priority over normal pages.
+- Before configuration and a known profile, five status pages rotate. The two active-target pages are added once settings/profile are available. No keypad is required.
+- The final large-text firmware was flashed and its entire image verified: 1,330,912 bytes, SHA-256 `dddfcbea396dc0dfba2b2986696addf14945b647b30b692b1f489a43d426c3d5`. A compressed USB transfer failed; all eleven fallback ROM-loader blocks verified. Private evidence is under `secrets/flash-large-oled/`.
+- PlatformIO build passes. The GPIO4-only intermediate image initially returned no sensor readings, so a power/ground/pull-up check was requested. After the final display update, three consecutive USB snapshots reported healthy DHT22 readings of 26.0–26.1 °C and 33.8–33.9% RH, healthy storage, and OLED detection. Uptime increased from 9,497 to 14,616 ms with one boot ID; all outputs remained simulated and OFF. Snapshots passed server schema validation and are saved privately in `secrets/usb-large-oled.json`. The sensor check is now resolved; these readings are not independent calibration.
+
+
 ## Web-only controller, layout v3 — 2026-11-12
 
 - Removed keypad dependency, GPIO scanning, and menus. OLED is 128×64, SDA21/SCL22; DHT22 DATA17; heater/humidifier/light1/light2 use 25/26/27/14. Relay switching remains simulated.
@@ -8,8 +17,8 @@
 - All 24 backend tests and 8 browser tests pass, including persistent light acknowledgment/revision checking, stale commands, cached-clock alerts, and a synthetic device restart with saved light selection.
 - Production web and Docker builds pass. Container integration checks pass for authentication, device sync, acknowledgments, and database/session persistence after container replacement. Mobile layout was visually inspected.
 - Application upload completed in eleven verified ROM-loader blocks at 57600 baud; full-image digest matched. The board had an older bootloader and 1280 KiB app partition, which rejected the new image. Installing the matching bootloader, 3 MiB app partition table, and OTA boot metadata resolved the boot loop. NVS remains at 0x9000 with the same 20 KiB size; it was not erased.
-- Installed layout-v3 application: 1,330,976 bytes, SHA-256 `74c7027cade8139fa9557ef685902bcb4f618495509971cb04db3c53f26fb131`. Private logs/images are in `secrets/flash-layout-v3/`.
-- USB reports the new persistent-light capability, healthy storage, OLED detection, unconfigured settings, simulated mode, and all outputs OFF. At the first post-upload check DHT22 readings were unavailable on GPIO17; the owner was asked to check its wiring. OLED text readability also awaits owner confirmation.
+- Initial layout-v3 application: 1,330,976 bytes, SHA-256 `74c7027cade8139fa9557ef685902bcb4f618495509971cb04db3c53f26fb131`. Private logs/images are in `secrets/flash-layout-v3/`.
+- USB reports the new persistent-light capability, healthy storage, OLED detection, unconfigured settings, simulated mode, and all outputs OFF. At the first post-upload check DHT22 readings were unavailable on GPIO17; the owner was asked to check its wiring. The owner subsequently confirmed the 128×64 OLED text is readable and clarified that DHT22 DATA is actually connected to GPIO4; see the correction above.
 - Real server provisioning, configured-device power-loss recovery, Wi-Fi loss/reconnect, and physical appliance switching remain unverified. Host storage tests and synthetic-device browser tests do not establish those physical results.
 
 
