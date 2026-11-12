@@ -1,5 +1,32 @@
 # Dashboard deployment
 
+## Run the GitHub Packages image
+
+The [Publish Docker image workflow](https://github.com/MrMohebi/pascal-automation/actions/workflows/docker-publish.yml) builds a Linux AMD64 image on GitHub-hosted runners. It runs API and container persistence checks before publishing the exact tested image. Pushes to `main` publish `latest` and `sha-<full-commit>`; `v*` tags publish their tag name and commit tag without moving `latest`. You can also run it manually on `main`. No self-hosted runner or registry password secret is needed: publishing uses the workflow's `GITHUB_TOKEN` with `packages: write`.
+
+Image: **`ghcr.io/mrmohebi/pascal-automation:latest`**. The repository is private; the package starts private too. On the server, sign in with your GitHub username and a classic personal access token with `read:packages`, entered at Docker's password prompt. See [GitHub's registry authentication instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic).
+
+```sh
+docker login ghcr.io -u MrMohebi
+```
+
+Clone this repository (or `git pull` in your existing checkout), then select the published image and generate credentials if `.env` does not exist:
+
+```sh
+export PASCAL_IMAGE=ghcr.io/mrmohebi/pascal-automation:latest
+sh tools/setup_server_docker.sh
+```
+
+Add `PASCAL_IMAGE=ghcr.io/mrmohebi/pascal-automation:latest` to your private `.env` to retain the image choice for future Compose commands. For a pinned deployment, use a published `sha-<full-commit>` tag instead.
+
+With your hostname configured and DNS pointing to the server, start with bundled HTTPS:
+
+```sh
+docker compose -f compose.yaml -f compose.https.yaml up -d --no-build --pull always
+```
+
+If you use an existing HTTPS reverse proxy, use `docker compose up -d --no-build --pull always` and the routing guidance below. Repeat the applicable command to pull an update; `.env` and the persistent database volume are retained. Keep `--no-build` so Compose uses the published image. The local-build path below remains available.
+
 ## Quick start with Docker only
 
 The Dockerfile packages the React dashboard and FastAPI API in one image. The server needs Docker with the Compose plugin; host Python and Node are not required. Run these commands on your server:

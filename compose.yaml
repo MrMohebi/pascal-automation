@@ -1,6 +1,6 @@
 services:
   pascal:
-    image: pascal-watcher:local
+    image: ${PASCAL_IMAGE:-pascal-watcher:local}
     build: .
     restart: unless-stopped
     env_file: .env

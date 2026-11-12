@@ -6,6 +6,8 @@ ESP32 terrarium monitoring and control, with a 128×64 status OLED, and a privat
 
 ## Start here
 
+GitHub Actions builds and tests the server image on pushes to `main`, then publishes `ghcr.io/mrmohebi/pascal-automation:latest` and a `sha-<full-commit>` tag for Linux AMD64. See [running the published image](docs/DEPLOYMENT.md#run-the-github-packages-image) to deploy without a server-side build.
+
 **Current wiring (layout v3):** DHT22 DATA **4**, OLED SDA **21** / SCL **22**, heater/humidifier/light 1/light 2 **25 / 26 / 27 / 14**. There is no keypad. Configure through the web dashboard; the display only shows status and saved settings.
 
 1. Follow [low-voltage wiring](docs/WIRING.md). Leave every mains appliance disconnected during assembly and tests.
