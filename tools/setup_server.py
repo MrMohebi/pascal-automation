@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
-"""Generate local server credentials without printing passwords/tokens."""
+"""Ask for one dashboard password and save it privately for Docker Compose."""
 
 import getpass
 import os
-import secrets
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server.security import hash_password
 
 
 def main():
@@ -17,13 +12,12 @@ def main():
         raise SystemExit(
             ".env already exists; preserve it or move it aside deliberately before generating new credentials."
         )
-    username = input("Admin username [admin]: ").strip() or "admin"
-    if any(c in username for c in "\n\r'\"$ "):
-        raise SystemExit("Use a username without quotes, spaces or shell characters.")
-    password = getpass.getpass("Admin password (at least 12 characters): ")
-    if len(password) < 12 or password != getpass.getpass("Repeat password: "):
-        raise SystemExit("Password too short or confirmation did not match.")
-    content = f"ADMIN_USER={username}\nADMIN_PASSWORD_HASH='{hash_password(password)}'\nDEVICE_TOKEN={secrets.token_urlsafe(48)}\n"
+    password = getpass.getpass("Dashboard password: ")
+    if not 1 <= len(password) <= 256 or any(c in password for c in "\n\r\0"):
+        raise SystemExit("Use a password of 1 to 256 characters on one line.")
+    # Quote for Compose's dotenv parser, including its dollar interpolation.
+    escaped = password.replace("\\", "\\\\").replace('"', '\\"').replace("$", "$$")
+    content = f'ADMIN_PASSWORD="{escaped}"\n'
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as file:
         file.write(content)

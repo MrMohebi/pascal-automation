@@ -209,14 +209,12 @@ void serialInput() {
                                                        : "{\"error\":\"Invalid clock\"}");
     } else if (op == "provision") {
       String ssid = d["ssid"].as<String>(), password = d["password"].as<String>(),
-             url = d["url"].as<String>(), token = d["token"].as<String>(),
-             ca = d["ca"].as<String>();
+             url = d["url"].as<String>(), ca = d["ca"].as<String>();
       while (url.endsWith("/"))
         url.remove(url.length() - 1);
       if (!storageReady || ssid.isEmpty() || ssid.length() > 32 || password.isEmpty() ||
           password.length() > 63 || !url.startsWith("https://") || url.length() > 256 ||
-          token.length() < 32 || token.length() > 256 || ca.indexOf("BEGIN CERTIFICATE") < 0 ||
-          ca.length() > 4096) {
+          ca.indexOf("BEGIN CERTIFICATE") < 0 || ca.length() > 4096) {
         Serial.println("{\"error\":\"Invalid provisioning fields\"}");
         continue;
       }
@@ -224,7 +222,6 @@ void serialInput() {
       creds["ssid"] = ssid;
       creds["password"] = password;
       creds["url"] = url;
-      creds["token"] = token;
       creds["ca"] = ca;
       String stored;
       serializeJson(creds, stored);
@@ -259,7 +256,6 @@ void setup() {
       network.ssid = creds["ssid"].as<String>();
       network.password = creds["password"].as<String>();
       network.url = creds["url"].as<String>();
-      network.token = creds["token"].as<String>();
       network.ca = creds["ca"].as<String>();
     }
   }

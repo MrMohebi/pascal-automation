@@ -21,9 +21,7 @@ from test.test_server import configuration, telemetry
 directory = tempfile.TemporaryDirectory(prefix="pascal-e2e-")
 settings = Settings(
     str(Path(directory.name) / "test.sqlite"),
-    "admin",
     hash_password("e2e-password-only"),
-    "e2e-device-only-" + "a" * 32,
     False,
     static_dir=str(Path(directory.name) / "no-static"),
 )
@@ -105,7 +103,6 @@ def device():
                 data=json.dumps(state).encode(),
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer " + settings.device_token,
                 },
             )
             try:

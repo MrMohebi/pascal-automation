@@ -4,15 +4,15 @@ Single terrarium, single device, single owner in version 1. Browser API schema i
 
 | Method/path | Purpose |
 |---|---|
-| POST `/api/login` | `{username,password}` → session cookie and CSRF token |
-| GET `/api/session` | Current username and CSRF token |
+| POST `/api/login` | `{password}` → session cookie and CSRF token |
+| GET `/api/session` | Current CSRF token |
 | POST `/api/logout` | Revoke session |
 | GET `/api/status` | Latest reported snapshot, freshness, alerts, recent commands |
 | GET `/api/history?hours=24` | Time-bucketed readings; supported windows 24, 168, 720 hours |
 | PUT `/api/config` | `{boot_id,base_revision,config}` → pending command ID |
 | POST `/api/overrides` | `{boot_id,base_revision,light,mode}`; light 0/1, mode -1=Auto, 0=Off, 1=On |
 | POST `/api/faults/acknowledge` | `{boot_id,base_revision}`; device checks the fault-clear conditions |
-| POST `/api/device/sync` | Device telemetry and acknowledged results; bearer device token |
+| POST `/api/device/sync` | Device telemetry and acknowledged results; no authentication |
 
 Device snapshots use protocol version 1, boot ID, monotonic uptime, settings revision, the entire applied configuration (or null before setup), temperature/humidity, sample age, sensor/clock/display/storage health, Wi-Fi RSSI, simulated flag, profile, inhibit reason, four commanded output states, fault names, and two light selection states. Current firmware adds `schedule_cached` (a saved schedule/profile is available) and `light_modes_persistent` (manual light modes survive restart); these default to false for older firmware. With persistent modes, `until` is zero and mode changes increment the revision. Output order is heater, humidifier, light 1, light 2.
 
@@ -27,3 +27,5 @@ History timestamps are server receipt times in UTC. Charts display Tehran time a
 When clock time is unavailable after restart, `clock_ok` is false while `profile` can still be day/night from saved state. If `schedule_cached` is true, local control uses that profile and held automatic light states after sensor recovery; this is not a claim of current wall time. With no cached schedule, all outputs are inhibited. A valid clock refreshes the cached schedule, which is written only on transitions. Remote commands still require valid time for expiry checking, and TLS requires time for certificate validation.
 
 Old `settings` NVS records migrate without erasing Wi-Fi credentials or latched faults. Once `state_v3` exists it is authoritative; malformed newer records cause storage failure rather than silently reverting to stale settings. Every remote light selection is acknowledged only after storage succeeds, and the server verifies its reported mode and revision.
+
+Device sync trusts any caller, including older firmware that still sends an Authorization header. Payload validation, revision matching, acknowledgments, and firmware safety checks still apply. Browser settings changes require the password session and CSRF token.

@@ -11,7 +11,6 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server.security import hash_password
 from test.test_server import configuration, telemetry
 
 
@@ -24,13 +23,10 @@ def docker(*args):
 def main():
     name = "pascal-check-" + secrets.token_hex(5)
     volume = name + "-data"
-    token = secrets.token_urlsafe(48)
     password = secrets.token_urlsafe(24)
     with tempfile.TemporaryDirectory(prefix="pascal-container-") as directory:
         env = Path(directory) / "environment"
-        env.write_text(
-            f"ADMIN_USER=admin\nADMIN_PASSWORD_HASH={hash_password(password)}\nDEVICE_TOKEN={token}\nCOOKIE_SECURE=false\n"
-        )
+        env.write_text(f"ADMIN_PASSWORD={password}\nCOOKIE_SECURE=false\n")
         os.chmod(env, 0o600)
         docker("volume", "create", volume)
 
@@ -73,17 +69,11 @@ def main():
             client = httpx.Client(base_url=url)
             assert client.get("/").status_code == 200
             assert client.get("/api/status").status_code == 401
-            login = client.post(
-                "/api/login", json={"username": "admin", "password": password}
-            )
+            login = client.post("/api/login", json={"password": password})
             assert login.status_code == 200
             client.headers["X-CSRF-Token"] = login.json()["csrf"]
             state = telemetry()
-            headers = {"Authorization": "Bearer " + token}
-            assert (
-                client.post("/api/device/sync", json=state, headers=headers).status_code
-                == 200
-            )
+            assert client.post("/api/device/sync", json=state).status_code == 200
             command = client.put(
                 "/api/config",
                 json={
@@ -93,9 +83,7 @@ def main():
                 },
             )
             assert command.status_code == 200
-            received = client.post(
-                "/api/device/sync", json=state, headers=headers
-            ).json()["command"]
+            received = client.post("/api/device/sync", json=state).json()["command"]
             assert received["id"] == command.json()["id"]
             state.update(
                 config=configuration(),
@@ -106,10 +94,7 @@ def main():
                     "message": "Container test device",
                 },
             )
-            assert (
-                client.post("/api/device/sync", json=state, headers=headers).status_code
-                == 200
-            )
+            assert client.post("/api/device/sync", json=state).status_code == 200
             assert (
                 client.get("/api/status").json()["commands"][0]["status"] == "applied"
             )

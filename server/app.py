@@ -9,40 +9,38 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 
 from .models import ConfigChange, Login, OverrideChange, Telemetry, Versioned
-from .security import token_hash, verify_password
+from .security import hash_password, token_hash, verify_password
 
 
 @dataclass
 class Settings:
     database: str
-    admin_user: str
     password_hash: str
-    device_token: str
     secure_cookie: bool = True
     retention_days: int = 90
     static_dir: str = "web/dist"
 
     @classmethod
     def from_env(cls):
+        password = os.getenv("ADMIN_PASSWORD")
+        if password is not None and not 1 <= len(password) <= 256:
+            raise RuntimeError("ADMIN_PASSWORD must contain 1 to 256 characters")
         result = cls(
             database=os.getenv("DATABASE_PATH", "data/pascal.sqlite"),
-            admin_user=os.getenv("ADMIN_USER", "admin"),
-            password_hash=os.environ["ADMIN_PASSWORD_HASH"],
-            device_token=os.environ["DEVICE_TOKEN"],
+            # Keep existing installations working while new setups need one value.
+            password_hash=hash_password(password)
+            if password is not None
+            else os.getenv("ADMIN_PASSWORD_HASH", ""),
             secure_cookie=os.getenv("COOKIE_SECURE", "true").lower() == "true",
             retention_days=int(os.getenv("RETENTION_DAYS", "90")),
             static_dir=os.getenv("STATIC_DIR", "web/dist"),
         )
-        if (
-            len(result.device_token) < 32
-            or not result.password_hash.startswith("scrypt$")
-            or result.retention_days < 1
-        ):
-            raise RuntimeError("Run tools/setup_server.py to create valid credentials")
+        if not result.password_hash.startswith("scrypt$") or result.retention_days < 1:
+            raise RuntimeError("Set ADMIN_PASSWORD in .env before starting Pascal")
         return result
 
 
@@ -113,12 +111,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(403, "Invalid CSRF token")
         return row
 
-    def device_auth(authorization: str = Header(default="")):
-        if not secrets.compare_digest(
-            authorization.encode(), ("Bearer " + settings.device_token).encode()
-        ):
-            raise HTTPException(401, "Invalid device token")
-
     def expire(conn, now):
         conn.execute(
             "UPDATE commands SET status='expired',message='Acknowledgment expired; inspect reported device state' WHERE status='pending' AND expires_at<=?",
@@ -152,10 +144,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(429, "Too many sign-in attempts; wait 15 minutes")
             recent.append(now)
         password_ok = verify_password(body.password, settings.password_hash)
-        if not password_ok or not secrets.compare_digest(
-            body.username.encode(), settings.admin_user.encode()
-        ):
-            raise HTTPException(401, "Incorrect username or password")
+        if not password_ok:
+            raise HTTPException(401, "Incorrect password")
         with attempts_lock:
             attempts.pop(ip, None)
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
@@ -174,11 +164,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             samesite="strict",
             path="/",
         )
-        return {"csrf": csrf, "username": settings.admin_user}
+        return {"csrf": csrf}
 
     @app.get("/api/session")
     def current_session(auth=Depends(session)):
-        return {"csrf": auth["csrf"], "username": settings.admin_user}
+        return {"csrf": auth["csrf"]}
 
     @app.post("/api/logout")
     def logout(request: Request, response: Response, auth=Depends(session)):
@@ -190,7 +180,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.delete_cookie("pascal_session", path="/")
         return {"ok": True}
 
-    @app.post("/api/device/sync", dependencies=[Depends(device_auth)])
+    @app.post("/api/device/sync")
     def sync(body: Telemetry):
         now = time.time()
         snapshot = body.model_dump()

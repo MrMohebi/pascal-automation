@@ -99,7 +99,8 @@ class Telemetry(Model):
 
 
 class Login(Model):
-    username: str = Field(min_length=1, max_length=80)
+    # Accept the previous dashboard's payload during an image upgrade.
+    username: str | None = Field(default=None, max_length=80)
     password: str = Field(min_length=1, max_length=256)
 
 

@@ -5,7 +5,41 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server.app import Settings, create_app
-from server.security import hash_password
+from server.security import hash_password, verify_password
+
+
+def test_only_password_env_is_needed(monkeypatch, tmp_path):
+    for key in ("ADMIN_USER", "ADMIN_PASSWORD_HASH", "DEVICE_TOKEN"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("ADMIN_PASSWORD", "home-password")
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "env.sqlite"))
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    client = TestClient(create_app(), base_url="https://testserver")
+    assert client.post("/api/login", json={"password": "wrong"}).status_code == 401
+    assert (
+        client.post("/api/login", json={"password": "home-password"}).status_code == 200
+    )
+    assert client.get("/api/status").status_code == 200
+
+
+def test_old_password_hash_and_new_password_priority(monkeypatch):
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    monkeypatch.setenv("ADMIN_PASSWORD_HASH", hash_password("old-password"))
+    assert verify_password("old-password", Settings.from_env().password_hash)
+    monkeypatch.setenv("ADMIN_PASSWORD", "new-password")
+    settings = Settings.from_env()
+    assert verify_password("new-password", settings.password_hash)
+    assert not verify_password("old-password", settings.password_hash)
+
+
+@pytest.mark.parametrize("password", [None, "", "x" * 257])
+def test_missing_or_invalid_password_is_rejected(monkeypatch, password):
+    monkeypatch.delenv("ADMIN_PASSWORD_HASH", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    if password is not None:
+        monkeypatch.setenv("ADMIN_PASSWORD", password)
+    with pytest.raises(RuntimeError, match="ADMIN_PASSWORD"):
+        Settings.from_env()
 
 
 def configuration():
@@ -63,16 +97,12 @@ def telemetry():
 def rig(tmp_path):
     settings = Settings(
         str(tmp_path / "db.sqlite"),
-        "admin",
         hash_password("correct-password"),
-        "a" * 48,
         False,
         static_dir=str(tmp_path / "absent"),
     )
     client = TestClient(create_app(settings))
-    auth = client.post(
-        "/api/login", json={"username": "admin", "password": "correct-password"}
-    )
+    auth = client.post("/api/login", json={"password": "correct-password"})
     assert auth.status_code == 200
     client.headers["X-CSRF-Token"] = auth.json()["csrf"]
     return client, settings
@@ -83,7 +113,6 @@ def sync(rig, data=None):
     return client.post(
         "/api/device/sync",
         json=data or telemetry(),
-        headers={"Authorization": "Bearer " + settings.device_token},
     )
 
 
@@ -91,13 +120,8 @@ def test_auth_and_csrf(rig):
     client, settings = rig
     outsider = TestClient(create_app(settings))
     assert outsider.get("/api/status").status_code == 401
-    assert outsider.post("/api/device/sync", json=telemetry()).status_code == 401
-    assert (
-        outsider.post(
-            "/api/login", json={"username": "admin", "password": "wrong"}
-        ).status_code
-        == 401
-    )
+    assert outsider.post("/api/device/sync", json=telemetry()).status_code == 200
+    assert outsider.post("/api/login", json={"password": "wrong"}).status_code == 401
     assert (
         client.post("/api/logout", headers={"X-CSRF-Token": "wrong"}).status_code == 403
     )
@@ -105,21 +129,29 @@ def test_auth_and_csrf(rig):
     assert client.get("/api/session").status_code == 401
 
 
+def test_device_sync_ignores_old_token_but_validates_payload(rig):
+    _, settings = rig
+    outsider = TestClient(create_app(settings))
+    assert (
+        outsider.post(
+            "/api/device/sync",
+            json=telemetry(),
+            headers={"Authorization": "Bearer old-token"},
+        ).status_code
+        == 200
+    )
+    assert (
+        outsider.post("/api/device/sync", json={"temperature": "broken"}).status_code
+        == 422
+    )
+    assert outsider.put("/api/config", json={}).status_code == 401
+
+
 def test_login_rate_limit(rig):
     client, _ = rig
     for _ in range(10):
-        assert (
-            client.post(
-                "/api/login", json={"username": "admin", "password": "wrong"}
-            ).status_code
-            == 401
-        )
-    assert (
-        client.post(
-            "/api/login", json={"username": "admin", "password": "wrong"}
-        ).status_code
-        == 429
-    )
+        assert client.post("/api/login", json={"password": "wrong"}).status_code == 401
+    assert client.post("/api/login", json={"password": "wrong"}).status_code == 429
 
 
 def test_device_online_and_expiry(rig, monkeypatch):
@@ -322,14 +354,10 @@ def test_bad_readings_create_history_gaps(rig):
 def test_secure_session_cookie(tmp_path):
     settings = Settings(
         str(tmp_path / "secure.sqlite"),
-        "admin",
         hash_password("correct-password"),
-        "a" * 48,
     )
     client = TestClient(create_app(settings), base_url="https://testserver")
-    response = client.post(
-        "/api/login", json={"username": "admin", "password": "correct-password"}
-    )
+    response = client.post("/api/login", json={"password": "correct-password"})
     assert "Secure" in response.headers["set-cookie"]
     assert "HttpOnly" in response.headers["set-cookie"]
     assert "SameSite=strict" in response.headers["set-cookie"]

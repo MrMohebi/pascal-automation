@@ -55,26 +55,15 @@ def main():
         required=True,
         help="PEM root CA matching the server certificate",
     )
-    provision.add_argument(
-        "--env-file",
-        type=Path,
-        help="Read DEVICE_TOKEN from your private .env instead of prompting",
-    )
     args = parser.parse_args()
     request = {"op": args.command}
     if args.command == "clock":
         request["value"] = args.value
     elif args.command == "provision":
-        token = ""
-        if args.env_file:
-            for line in args.env_file.read_text().splitlines():
-                if line.startswith("DEVICE_TOKEN="):
-                    token = line.split("=", 1)[1].strip().strip("'\"")
         request.update(
             ssid=input("2.4 GHz Wi-Fi SSID: "),
             password=getpass.getpass("Wi-Fi password: "),
             url=input("Server URL (https://…): ").rstrip("/"),
-            token=token or getpass.getpass("Device token: "),
             ca=args.ca.read_text(),
         )
         if not request["url"].startswith("https://"):

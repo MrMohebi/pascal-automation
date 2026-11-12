@@ -20,16 +20,16 @@ GitHub Actions builds and tests the server image on pushes to `main`, then publi
 
    If `pio` is not on PATH on this Mac, use `~/.platformio/penv/bin/pio`. The firmware uses a 3 MB application partition on a 4 MB board; USB updates only, no OTA. Platform/framework and direct library versions are pinned in `platformio.ini`.
 
-3. Follow the [server setup](docs/DEPLOYMENT.md#run-the-github-packages-image). Run `sh tools/setup_server_docker.sh` once to create credentials, then `docker compose up -d`. The single Compose file pulls the published image; point your existing HTTPS proxy to port 8000. Host Python and Node are not required.
+3. Follow the [server setup](docs/DEPLOYMENT.md#run-the-github-packages-image). Set just `ADMIN_PASSWORD` in `.env` (or run `sh tools/setup_server_docker.sh` to enter it privately), then `docker compose up -d`. The single Compose file pulls the published image; point your existing HTTPS proxy to port 8000. Host Python and Node are not required.
 4. Provision the board from your laptop:
 
    ```sh
    python3 -m venv .venv
    .venv/bin/pip install -r tools/requirements.txt
-   .venv/bin/python tools/device.py --port /dev/cu.usbserial-0001 provision --ca /path/to/server-root-ca.pem --env-file .env
+   .venv/bin/python tools/device.py --port /dev/cu.usbserial-0001 provision --ca /path/to/server-root-ca.pem
    ```
 
-   The utility prompts locally for your 2.4 GHz Wi-Fi name/password and HTTPS URL. It does not print credentials. The CA must match your server's certificate chain. Wi-Fi credentials, CA, and token are saved in ESP32 NVS; they are not encrypted against physical flash access. Close the PlatformIO serial monitor before using the utility.
+   The utility prompts locally for your 2.4 GHz Wi-Fi name/password and HTTPS URL. It does not print credentials. The CA must match your server's certificate chain. No device token is needed. Wi-Fi credentials and CA are saved in ESP32 NVS; they are not encrypted against physical flash access. Close the PlatformIO serial monitor before using the utility.
 
 5. Check device status:
 

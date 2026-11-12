@@ -12,7 +12,7 @@ struct Frame {
 class PascalNetwork {
 public:
   QueueHandle_t outbound = nullptr, inbound = nullptr;
-  String ssid, password, url, token, ca;
+  String ssid, password, url, ca;
   std::atomic<bool> serverConnected{false};
   std::atomic<uint32_t> lastSuccess{0};
   void begin() {
@@ -21,8 +21,7 @@ public:
     if (!outbound || !inbound)
       return;
     // Credentials are immutable for this task's lifetime; provisioning reboots.
-    if (ssid.isEmpty() || password.isEmpty() || !url.startsWith("https://") ||
-        token.length() < 32 || ca.isEmpty())
+    if (ssid.isEmpty() || password.isEmpty() || !url.startsWith("https://") || ca.isEmpty())
       return;
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
@@ -73,7 +72,6 @@ private:
         http.setTimeout(5000);
         if (http.begin(client, url + "/api/device/sync")) {
           http.addHeader("Content-Type", "application/json");
-          http.addHeader("Authorization", "Bearer " + token);
           int code = http.POST(reinterpret_cast<uint8_t *>(request.json), strlen(request.json));
           serverConnected = false;
           if (code == 200 && http.getSize() <= 6000) {

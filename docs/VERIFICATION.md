@@ -1,5 +1,15 @@
 # Verification
 
+## Password-only setup and open device sync — 2026-11-12
+
+- The only required environment setting is now `ADMIN_PASSWORD`. Setup and dashboard login ask only for a password. Existing password hashes remain accepted for upgrades; `ADMIN_PASSWORD` takes precedence.
+- Removed device-token authentication from sync, the USB provisioning utility, and firmware. Older devices can continue sending a token; it is ignored. Data validation, settings revisions, persistent state, and safety interlocks remain active.
+- 30 API tests passed, including password-only environment startup, missing/invalid password handling, legacy hash migration, token-free sync, and rejection of malformed telemetry. All eight browser tests passed with password-only login.
+- Built the Docker image and passed real container checks for login, token-free device sync, configuration acknowledgment, and history/session persistence across replacement.
+- Tested the setup utility's generated `.env` through real Compose containers with spaces, dollar signs, single/double quotes, backslashes, trailing backslashes, and non-ASCII passwords; values reached the container unchanged and files had mode 0600. Temporary containers and credentials were removed.
+- PlatformIO firmware build passed. This change was not flashed to the connected ESP32, and no production server was deployed.
+
+
 ## Single Compose file using GHCR — 2026-11-12
 
 - `compose.yaml` now contains one service using `ghcr.io/mrmohebi/pascal-automation:latest`, port 8000, `.env`, restart policy, and the existing `pascal_data` volume. The separate HTTPS Compose file and Caddy configuration were removed; the owner selected an existing reverse proxy.

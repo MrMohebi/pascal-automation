@@ -366,7 +366,7 @@ function SettingsForm({
 }
 
 function App() {
-  const [auth, setAuth] = useState<{ csrf: string; username: string } | null>(
+  const [auth, setAuth] = useState<{ csrf: string } | null>(
       null,
     ),
     [checking, setChecking] = useState(true);
@@ -487,15 +487,6 @@ function App() {
               }
             }}
           >
-            <label>
-              Username
-              <input
-                name="username"
-                autoComplete="username"
-                required
-                defaultValue="admin"
-              />
-            </label>
             <label>
               Password
               <input

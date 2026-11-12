@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 test.beforeEach(async ({ page, request }) => {
   expect((await request.post("/__test/scenario/configured")).ok()).toBeTruthy();
   await page.goto("/");
+  await expect(page.getByLabel("Username", { exact: true })).toHaveCount(0);
   await page.getByLabel("Password", { exact: true }).fill("e2e-password-only");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText("Device online", { exact: true })).toBeVisible({
