@@ -18,7 +18,7 @@ ESP32 terrarium monitoring and control, with a 128×32 OLED, 4×4 keypad, and a 
 
    If `pio` is not on PATH on this Mac, use `~/.platformio/penv/bin/pio`. The firmware uses a 3 MB application partition on a 4 MB board; USB updates only, no OTA. Platform/framework and direct library versions are pinned in `platformio.ini`.
 
-3. Follow [server deployment](docs/DEPLOYMENT.md) to create credentials and start the dashboard behind HTTPS.
+3. Follow the [Docker-only server quick start](docs/DEPLOYMENT.md#quick-start-with-docker-only). Run `sh tools/setup_server_docker.sh` on your server to build the image and create credentials, then start the dashboard behind HTTPS using Compose. Host Python and Node are not required.
 4. Provision the board from your laptop:
 
    ```sh

@@ -1,5 +1,13 @@
 # Verification
 
+## Docker-only setup — 2026-11-12
+
+- Updated Docker image builds the dashboard and API and includes the credential setup utility.
+- Container-based setup verified password hashing, device token generation, host file ownership, mode 0600, and refusal to overwrite existing credentials. The shell wrapper preserves an existing `.env` when launched from another directory.
+- Combined application/Caddy Compose configuration validates with temporary credentials.
+- Container integration checks pass: dashboard, authentication, synthetic device telemetry, command acknowledgment, and history/session persistence across container replacement. Temporary containers, volumes, and credentials were removed.
+- These checks ran locally. Public DNS, certificate issuance, and deployment to the owner's server remain unverified.
+
 ## Grouped wiring update — 2026-11-12
 
 Firmware now uses layout v2 from [WIRING.md](WIRING.md), centralized in `include/board_pins.h`: keypad on J2, four adjacent future relay signals on J1, adjacent OLED signal pins on J1, and DHT22 DATA beside J1 GND.

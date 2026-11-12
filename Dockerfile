@@ -11,6 +11,7 @@ WORKDIR /app
 COPY server/requirements.txt /app/server/requirements.txt
 RUN pip install --no-cache-dir -r server/requirements.txt && useradd --uid 10001 --create-home pascal && mkdir /data && chown pascal:pascal /data
 COPY server/ /app/server/
+COPY tools/setup_server.py /app/tools/setup_server.py
 COPY --from=frontend /web/dist /app/web/dist
 USER pascal
 EXPOSE 8000

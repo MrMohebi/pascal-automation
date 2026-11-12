@@ -1,8 +1,37 @@
 # Dashboard deployment
 
+## Quick start with Docker only
+
+The Dockerfile packages the React dashboard and FastAPI API in one image. The server needs Docker with the Compose plugin; host Python and Node are not required. Run these commands on your server:
+
+```sh
+git clone https://github.com/MrMohebi/pascal-automation.git
+cd pascal-automation
+sh tools/setup_server_docker.sh
+```
+
+The setup command builds the image and prompts for an admin username, password, and public hostname (for example `terrarium.example.com`, without `https://`). It creates `.env` in the project directory with private permissions and your host user's ownership. An existing `.env` is preserved; rerunning setup does not reset your password or device token.
+
+For a server without an existing web proxy, point that hostname's DNS at the server and make ports 80/443 available, then start the app with automatic HTTPS:
+
+```sh
+docker compose -f compose.yaml -f compose.https.yaml up -d --build
+```
+
+Open `https://YOUR_HOSTNAME` and sign in with the credentials you chose. If you already have an HTTPS proxy, use the **Existing HTTPS reverse proxy** section below instead.
+
+Check startup and logs:
+
+```sh
+docker compose -f compose.yaml -f compose.https.yaml ps
+docker compose -f compose.yaml -f compose.https.yaml logs --tail=100
+```
+
+To update later, run `git pull` and repeat the same `up -d --build` command. The named database volume and `.env` survive container replacement. See [Docker Compose startup options](https://docs.docker.com/reference/cli/docker/compose/up/) for the command behavior.
+
 ## Server credentials
 
-On the server, from this project directory:
+Alternatively, if Python is already installed, generate credentials without building the image first. From this project directory:
 
 ```sh
 python3 tools/setup_server.py
