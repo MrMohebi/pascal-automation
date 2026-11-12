@@ -1,0 +1,58 @@
+# Dashboard deployment
+
+## Server credentials
+
+On the server, from this project directory:
+
+```sh
+python3 tools/setup_server.py
+```
+
+This creates a private `.env` containing an scrypt password hash, a random device token, retention, and optional public hostname. The script refuses to overwrite existing credentials. Keep `.env` out of source control and transfer the device token privately to your laptop when provisioning.
+
+## Existing HTTPS reverse proxy
+
+```sh
+docker compose up -d --build
+```
+
+The app listens on **127.0.0.1:8000** on the host. Point your existing HTTPS reverse proxy to that address. If your proxy runs in a different container, join it and `pascal` to an appropriate shared Docker network and route to `pascal:8000`; localhost inside the proxy container is not the Docker host. Do not publish the application port publicly in plaintext.
+
+The app does not trust forwarded client-IP headers. The login limiter therefore groups requests arriving through a proxy under its address. This is intentional for this single-owner dashboard; it avoids spoofable IP-based rate-limit bypasses. It allows ten failed logins per 15 minutes per observed client address.
+
+## Bundled HTTPS proxy
+
+Set `PASCAL_DOMAIN` in `.env` to a real hostname whose DNS resolves to the server. Ensure ports 80/443 are available and reachable. Then:
+
+```sh
+docker compose -f compose.yaml -f compose.https.yaml up -d --build
+```
+
+Caddy obtains and renews certificates. Existing proxies already using 80/443 should use the previous option instead. The device makes outbound HTTPS requests to this hostname; no router forwarding is needed at home.
+
+For ESP32 provisioning, supply the root CA PEM matching the server's chain, obtained from the CA's official distribution. Check the certificate chain before choosing a CA; do not copy a leaf certificate as a long-lived trust anchor and do not disable certificate verification. Renewing a leaf certificate under the same trusted CA needs no firmware update; a CA change requires USB reprovisioning. Firmware gets time from NTP before TLS verification; the keypad clock is the fallback.
+
+## Local development
+
+Generate `.env` once, install requirements, and build `web/dist`. Run:
+
+```sh
+COOKIE_SECURE=false .venv/bin/python -m uvicorn server.app:create_app --factory --env-file .env --host 127.0.0.1 --port 8000
+```
+
+Use http://127.0.0.1:8000 for local browser development. `COOKIE_SECURE=false` is only for this loopback HTTP path. Compose forces secure cookies. For frontend hot reload, run `npm run dev` in `web`; Vite proxies `/api` to port 8000. Real ESP32 networking still requires HTTPS and a trusted CA.
+
+## Persistence and backups
+
+SQLite is in the named `pascal_data` volume. Container rebuilds/restarts keep readings, sessions, and command history. Do not use `docker compose down -v` unless deliberately deleting this data.
+
+Create a consistent SQLite snapshot in the running container, then copy it out:
+
+```sh
+docker compose exec pascal python -c "import sqlite3; s=sqlite3.connect('/data/pascal.sqlite'); d=sqlite3.connect('/tmp/pascal-backup.sqlite'); s.backup(d); d.close(); s.close()"
+docker compose cp pascal:/tmp/pascal-backup.sqlite ./pascal-backup.sqlite
+```
+
+Back up `.env` separately and protect both files. To restore, stop the app, replace the database in its volume from a trusted backup, remove stale WAL/SHM files while the app is stopped, restore ownership to UID 10001, then start and verify status/history. Do not copy a live database file without SQLite's backup API.
+
+`GET /api/health` verifies the application can query SQLite; it does not prove device connectivity. Inspect the dashboard's last report, sensor status, and acknowledged settings for that.

@@ -1,0 +1,62 @@
+export type Configuration = {
+  enabled: boolean;
+  day_temp_on: number;
+  day_temp_off: number;
+  night_temp_on: number;
+  night_temp_off: number;
+  day_rh_on: number;
+  day_rh_off: number;
+  night_rh_on: number;
+  night_rh_off: number;
+  max_temperature: number;
+  day_start: number;
+  day_end: number;
+  light1_on: number;
+  light1_off: number;
+  light2_on: number;
+  light2_off: number;
+  min_off_seconds: number;
+  heater_max_seconds: number;
+  humidifier_max_seconds: number;
+};
+export type NumericKey = Exclude<keyof Configuration, "enabled">;
+export type Device = {
+  boot_id: string;
+  revision: number;
+  config: Configuration | null;
+  temperature: number | null;
+  humidity: number | null;
+  sample_age_ms: number | null;
+  sensor_ok: boolean;
+  clock_ok: boolean;
+  simulated: boolean;
+  profile: string;
+  reason: string;
+  outputs: boolean[];
+  faults: string[];
+  overrides: { mode: number; until: number }[];
+  display_ok: boolean;
+  storage_ok: boolean;
+  wifi_rssi: number;
+};
+export type Command = {
+  id: string;
+  kind: string;
+  created: number;
+  status: string;
+  message: string;
+};
+export type Status = {
+  online: boolean;
+  received_at: number | null;
+  device: Device | null;
+  alerts: string[];
+  commands: Command[];
+  server_time: number;
+};
+export type Point = {
+  time: number;
+  temperature: number | null;
+  humidity: number | null;
+  sensor_ok: number;
+};

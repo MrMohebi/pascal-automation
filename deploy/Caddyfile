@@ -1,0 +1,6 @@
+{$PASCAL_DOMAIN} {
+    request_body {
+        max_size 32KB
+    }
+    reverse_proxy pascal:8000
+}
