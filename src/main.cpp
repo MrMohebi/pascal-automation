@@ -14,11 +14,6 @@ Storage storage;
 PascalNetwork network;
 LocalUI ui;
 DHT sensor(boardpins::dht, DHT22);
-char keymap[4][4] = {
-    {'1', '2', '3', 'A'}, {'4', '5', '6', 'B'}, {'7', '8', '9', 'C'}, {'*', '0', '#', 'D'}};
-auto rows = boardpins::keypadRows;
-auto columns = boardpins::keypadColumns;
-Keypad keypad(makeKeymap(keymap), rows.data(), columns.data(), 4, 4);
 uint32_t revision = 0;
 String bootId, lastCommandId, resultStatus, resultMessage;
 bool storageReady = false;
@@ -34,14 +29,30 @@ bool clockValid() { return time(nullptr) >= 1704067200; }
 bool saveConfig(const pascal::Config &c, uint32_t base) {
   if (base != revision || !pascal::valid(c) || !storageReady || revision == UINT32_MAX)
     return false;
-  if (!storage.save(c, revision + 1))
+  auto candidate = controller;
+  candidate.apply(c, millis());
+  candidate.updateSchedule(clockValid(), secondsToday() / 60);
+  if (!storage.save(candidate, revision + 1)) {
+    storageReady = false;
     return false;
-  controller.apply(c, millis());
+  }
+  controller = candidate;
   revision++;
   return true;
 }
 bool lightOverride(int light, int mode) {
-  return controller.overrideLight(light, mode, time(nullptr), secondsToday(), millis());
+  if (!storageReady || revision == UINT32_MAX)
+    return false;
+  auto candidate = controller;
+  if (!candidate.overrideLight(light, mode, millis()))
+    return false;
+  if (!storage.save(candidate, revision + 1)) {
+    storageReady = false;
+    return false;
+  }
+  controller = candidate;
+  revision++;
+  return true;
 }
 bool acknowledgeFaults() {
   if (!storageReady || !controller.configured || !controller.sensorReady(millis()) ||
@@ -103,12 +114,9 @@ void snapshot(JsonDocument &d) {
   d["sensor_ok"] = controller.sensorReady(now);
   d["clock_ok"] = clockValid();
   d["simulated"] = outputs::simulated;
-  d["profile"] = controller.configured && clockValid()
-                     ? (pascal::within(secondsToday() / 60, controller.config.day_start,
-                                       controller.config.day_end)
-                            ? "day"
-                            : "night")
-                     : "unknown";
+  d["profile"] = controller.scheduleState.known ? (controller.isDay ? "day" : "night") : "unknown";
+  d["schedule_cached"] = controller.scheduleState.known;
+  d["light_modes_persistent"] = true;
   d["reason"] = controller.reason;
   d["wifi_rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
   d["display_ok"] = ui.present;
@@ -129,7 +137,7 @@ void snapshot(JsonDocument &d) {
   for (auto &o : controller.overrides) {
     auto obj = ovs.add<JsonObject>();
     obj["mode"] = o.mode;
-    obj["until"] = o.until;
+    obj["until"] = 0; // No expiry: saved until explicitly changed.
   }
   if (lastCommandId.length()) {
     d["result"]["id"] = lastCommandId;
@@ -242,9 +250,8 @@ void setup() {
   controller.begin(millis());
   storageReady = storage.begin();
   if (storageReady) {
-    pascal::Config c;
-    if (storage.load(c, revision))
-      controller.apply(c, millis());
+    if (storage.hasState() && !storage.load(controller, revision))
+      storageReady = false;
     controller.faults = storage.prefs.getUChar("faults", 0);
     persistedFaults = controller.faults;
     JsonDocument creds;
@@ -258,10 +265,6 @@ void setup() {
   }
   sensor.begin();
   ui.begin();
-  ui.save = saveConfig;
-  ui.light = lightOverride;
-  ui.acknowledge = acknowledgeFaults;
-  ui.setClock = setClock;
   network.begin();
   esp_task_wdt_config_t watchdog{.timeout_ms = 8000, .idle_core_mask = 0, .trigger_panic = true};
   if (esp_task_wdt_init(&watchdog) == ESP_ERR_INVALID_STATE)
@@ -281,10 +284,13 @@ void loop() {
   JsonDocument incoming;
   if (network.receive(incoming))
     command(incoming);
-  ui.key(keypad.getKey(), controller, revision);
   serialInput();
+  const auto previousSchedule = controller.scheduleState;
   controller.tick(millis(), clockValid(), secondsToday() / 60, time(nullptr));
-  outputs::write(controller.outputs);
+  // Save only transitions, not each sensor sample. Persist before applying outputs.
+  if (storageReady && controller.scheduleState != previousSchedule &&
+      !storage.save(controller, revision))
+    storageReady = false;
   if (controller.faults != persistedFaults) {
     if (storageReady && storage.prefs.putUChar("faults", controller.faults) == 1)
       persistedFaults = controller.faults;
@@ -299,7 +305,7 @@ void loop() {
     renderAt = now;
     ui.render(controller, now, WiFi.status() == WL_CONNECTED,
               network.serverConnected && uint32_t(now - network.lastSuccess) < 30000, clockValid(),
-              outputs::simulated);
+              outputs::simulated, revision, storageReady);
   }
   if (uint32_t(now - publishAt) >= 1000) {
     publishAt = now;

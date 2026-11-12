@@ -199,7 +199,7 @@ const sections: { title: string; description: string; fields: Field[] }[] = [
   {
     title: "Lighting",
     description:
-      "Two separate daily schedules. Manual overrides end at the next transition.",
+      "Two separate daily schedules. Saved manual ON/OFF stays selected until you change it or choose Auto.",
     fields: [
       ["light1_on", "Light 1 · ON", "time"],
       ["light1_off", "Light 1 · OFF", "time"],
@@ -296,7 +296,7 @@ function SettingsForm({
       </div>
       <p className="muted">
         Enter your confirmed husbandry settings. No animal-care targets are
-        preselected. Changes also appear on the keypad.
+        preselected. Acknowledged settings are saved on the ESP32 and shown on its display.
       </p>
       {conflict && (
         <div className="notice error">
@@ -691,9 +691,9 @@ function App() {
                     {i < 2
                       ? (d?.reason ?? "Awaiting device")
                       : d?.overrides[i - 2]?.mode === -1
-                        ? "Following daily schedule"
+                        ? (!d.clock_ok && d.schedule_cached ? "Holding saved automatic state" : "Following daily schedule")
                         : d
-                          ? `Override until ${date(d.overrides[i - 2].until)}`
+                          ? (d.light_modes_persistent ? "Saved manual mode · survives restart" : `Override until ${date(d.overrides[i - 2].until)}`)
                           : "No schedule yet"}
                   </p>
                   {i >= 2 ? (
@@ -810,7 +810,7 @@ function App() {
                 )}
                 <div className="diagnostics">
                   <span>
-                    Clock <b>{d?.clock_ok ? "Ready" : "Not set"}</b>
+                    Clock <b>{d?.clock_ok ? "Ready" : d?.schedule_cached ? "Saved schedule" : "Not set"}</b>
                   </span>
                   <span>
                     OLED <b>{d?.display_ok ? "Detected" : "Not detected"}</b>

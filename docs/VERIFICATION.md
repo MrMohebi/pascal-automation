@@ -1,5 +1,18 @@
 # Verification
 
+## Web-only controller, layout v3 — 2026-11-12
+
+- Removed keypad dependency, GPIO scanning, and menus. OLED is 128×64, SDA21/SCL22; DHT22 DATA17; heater/humidifier/light1/light2 use 25/26/27/14. Relay switching remains simulated.
+- Firmware build passes. All 27 controller scenarios and configuration JSON checks pass; the simulated driver makes zero GPIO calls.
+- Host tests exercise the actual storage serialization/load/save code with a Preferences substitute: recovery across new controller/storage instances, persistent modes, cached day/night and automatic light states, sensor recovery, failed writes, corrupt records, and migration from legacy settings. This is not a physical power-cut test of ESP32 flash.
+- All 24 backend tests and 8 browser tests pass, including persistent light acknowledgment/revision checking, stale commands, cached-clock alerts, and a synthetic device restart with saved light selection.
+- Production web and Docker builds pass. Container integration checks pass for authentication, device sync, acknowledgments, and database/session persistence after container replacement. Mobile layout was visually inspected.
+- Application upload completed in eleven verified ROM-loader blocks at 57600 baud; full-image digest matched. The board had an older bootloader and 1280 KiB app partition, which rejected the new image. Installing the matching bootloader, 3 MiB app partition table, and OTA boot metadata resolved the boot loop. NVS remains at 0x9000 with the same 20 KiB size; it was not erased.
+- Installed layout-v3 application: 1,330,976 bytes, SHA-256 `74c7027cade8139fa9557ef685902bcb4f618495509971cb04db3c53f26fb131`. Private logs/images are in `secrets/flash-layout-v3/`.
+- USB reports the new persistent-light capability, healthy storage, OLED detection, unconfigured settings, simulated mode, and all outputs OFF. At the first post-upload check DHT22 readings were unavailable on GPIO17; the owner was asked to check its wiring. OLED text readability also awaits owner confirmation.
+- Real server provisioning, configured-device power-loss recovery, Wi-Fi loss/reconnect, and physical appliance switching remain unverified. Host storage tests and synthetic-device browser tests do not establish those physical results.
+
+
 ## Docker-only setup — 2026-11-12
 
 - Updated Docker image builds the dashboard and API and includes the credential setup utility.
@@ -8,16 +21,16 @@
 - Container integration checks pass: dashboard, authentication, synthetic device telemetry, command acknowledgment, and history/session persistence across container replacement. Temporary containers, volumes, and credentials were removed.
 - These checks ran locally. Public DNS, certificate issuance, and deployment to the owner's server remain unverified.
 
-## Grouped wiring update — 2026-11-12
+## Historical grouped wiring update (superseded) — 2026-11-12
 
-Firmware now uses layout v2 from [WIRING.md](WIRING.md), centralized in `include/board_pins.h`: keypad on J2, four adjacent future relay signals on J1, adjacent OLED signal pins on J1, and DHT22 DATA beside J1 GND.
+At this stage firmware used layout v2, centralized in `include/board_pins.h`: keypad on J2, four adjacent future relay signals on J1, adjacent OLED signal pins on J1, and DHT22 DATA beside J1 GND.
 
 - PlatformIO build passes for the new mapping.
 - All 24 native controller scenarios, JSON serialization checks, and the simulated output-driver check pass. The simulated driver still makes zero GPIO configuration/write calls.
-- The new mapping has **not been uploaded or physically verified**. The connected board retains layout v1 until the owner moves the wires. The hardware results below apply only to layout v1.
+- Layout v2 was built but never uploaded or physically verified. The board still ran layout v1 at this stage. The hardware results below apply only to layout v1.
 - The verified layout-v1 application, bootloader, and partition images were preserved in ignored `secrets/installed-layout-v1/` before rebuilding. This is a copy of the known installed Pascal build, not a backup of the firmware that preceded Pascal Watcher.
 
-New layout-v2 application: `.pio/build/esp32dev/firmware.bin`, 1332208 bytes, SHA-256 `fae1c0556d164ca339616eb8c90e8c76cd2dc3aa9f7abc14f5ee72656de95039`.
+Historical layout-v2 application (the build path has since been overwritten): 1332208 bytes, SHA-256 `fae1c0556d164ca339616eb8c90e8c76cd2dc3aa9f7abc14f5ee72656de95039`.
 
 ## Original layout-v1 verification — 2026-11-11
 
@@ -46,7 +59,7 @@ USB flash operations encountered intermittent serial corruption and a disappeari
 
 ## Final USB result
 
-**The firmware is now successfully installed and running.** After reconnection, the ordinary 115200-baud application upload reached 74% before another serial read error. The bootloader, partition table, and OTA boot-data image had already been hash-verified. Recovery used the ROM loader at 57600 baud to write the application in eleven sector-aligned blocks (ten of 131,072 bytes and one of 21,488 bytes), retrying failed blocks and verifying each successful write. A final `verify-flash` against the entire application at `0x10000` succeeded with a matching digest.
+**Layout-v1 firmware was successfully installed and running at this stage.** After reconnection, the ordinary 115200-baud application upload reached 74% before another serial read error. The bootloader, partition table, and OTA boot-data image had already been hash-verified. Recovery used the ROM loader at 57600 baud to write the application in eleven sector-aligned blocks (ten of 131,072 bytes and one of 21,488 bytes), retrying failed blocks and verifying each successful write. A final `verify-flash` against the entire application at `0x10000` succeeded with a matching digest.
 
 Installed layout-v1 application (preserved copy): `secrets/installed-layout-v1/firmware.bin` (1,332,208 bytes), SHA-256 `6077f9995fdf3df46b88d4d3a05602a8f9f7d9f42aea7bf8c0d63a983bdddf34`. Per-block logs and the full-image verification are in the ignored `secrets/flash-chunks/` directory. No complete original firmware backup was recovered. Intermittent transfer errors remain an observed USB-link limitation; the successful full-image verification establishes the final installed bytes despite those retries.
 

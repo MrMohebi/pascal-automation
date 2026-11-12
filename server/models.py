@@ -69,6 +69,8 @@ class Telemetry(Model):
     sample_age_ms: int | None = Field(ge=0, le=4294967295)
     sensor_ok: bool
     clock_ok: bool
+    schedule_cached: bool = False
+    light_modes_persistent: bool = False
     simulated: bool
     profile: Literal["day", "night", "unknown"]
     reason: str = Field(max_length=100)

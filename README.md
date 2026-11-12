@@ -1,12 +1,12 @@
 # Pascal Watcher
 
-ESP32 terrarium monitoring and control, with a 128×32 OLED, 4×4 keypad, and a private web dashboard.
+ESP32 terrarium monitoring and control, with a 128×64 status OLED, and a private web dashboard.
 
-**The shipped firmware is simulated: it never configures or writes the four relay GPIOs.** The DHT22, OLED, keypad, storage, Wi-Fi, and HTTPS synchronization are real. No husbandry targets are included. Four of the eight relay channels are reserved and have no assigned GPIOs.
+**The shipped firmware is simulated: it never configures or writes the four relay GPIOs.** The DHT22, OLED, storage, Wi-Fi, and HTTPS synchronization are real. No husbandry targets are included. Four of the eight relay channels are reserved and have no assigned GPIOs.
 
 ## Start here
 
-**Wiring update (2026-11-12):** source now uses grouped layout v2. The installed board still uses layout v1; move the wires using the [migration table](docs/WIRING.md#layout-v2--grouped-wiring-2026-11-12) before uploading this build.
+**Current wiring (layout v3):** DHT22 DATA **17**, OLED SDA **21** / SCL **22**, heater/humidifier/light 1/light 2 **25 / 26 / 27 / 14**. There is no keypad. Configure through the web dashboard; the display only shows status and saved settings.
 
 1. Follow [low-voltage wiring](docs/WIRING.md). Leave every mains appliance disconnected during assembly and tests.
 2. Build and upload using PlatformIO:
@@ -35,35 +35,27 @@ ESP32 terrarium monitoring and control, with a 128×32 OLED, 4×4 keypad, and a 
    .venv/bin/python tools/device.py --port /dev/cu.usbserial-0001 status
    ```
 
-6. Enter your confirmed settings from the dashboard or keypad. Save with automation disabled first; then enable it to inspect **simulated commanded states**.
+6. Enter your confirmed settings from the dashboard. Save with automation disabled first; then enable it to inspect **simulated commanded states**.
 
 ## Operation
 
 - DHT22 reads every 2.5 seconds. Three consecutive valid readings are required. Any invalid reading, or ten seconds without a fresh sample, inhibits all four outputs.
 - Heater and humidifier turn ON strictly below their ON thresholds and OFF at or above their OFF thresholds. Within the band they retain their previous states. Minimum OFF time applies to restart; shutdown never waits for a minimum run time.
 - Day/night climate profiles and both light schedules support midnight crossings. Equal ON/OFF times are rejected rather than interpreted as always-on.
-- A light override expires at its next schedule transition, with a monotonic deadline as protection against a backward clock adjustment. Select Auto to clear it earlier. Overrides are not restored after reboot.
+- Light ON/OFF selections are saved on the ESP32 and remain selected across schedule transitions, network loss, and restarts until you change them or choose Auto. Configuration changes preserve these selections. Safety interlocks always override the requested state.
 - Overtemperature or either maximum runtime latches **all outputs OFF**. Faults survive reboot. Acknowledge only after sensor recovery and temperature is below the configured maximum; a subsequent unchanged problem can trip again.
-- Network failures do not interrupt local control. After a cold power loss, automatic outputs wait for NTP or manually entered time. There is no battery-backed clock in this hardware. Day/night time is fixed to Asia/Tehran (`IRST-3:30`) in version 1.
-- Remote commands expire after 60 seconds and are bound to a boot ID and settings revision. A dashboard change is pending until the device acknowledges it. A conflicting keypad edit wins; the stale remote request is rejected. An expired command means acknowledgment was not received; inspect the latest device state rather than assuming it was never executed.
+- Network/server failures do not interrupt local control. A valid clock keeps daily schedules advancing. After a restart without a valid clock, the device uses its saved day/night profile and last automatic light states; the OLED/dashboard label this fallback. Fresh sensor readings still control heat and humidity. When NTP returns, schedules resume using current Tehran time (`IRST-3:30`).
+- A cold power loss cannot preserve knowledge of elapsed time without a battery-backed clock ([ESP32 timekeeping](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/system_time.html)). Saved schedule states remain fixed until time is known; no historical timestamp is presented as the current clock. If no schedule has ever been saved, outputs stay OFF until time is established. USB clock entry remains available through `tools/device.py ... clock YYYYMMDDHHMM`.
+- Settings, light selections, and schedule state are committed together to nonvolatile storage before acknowledgment or applying a schedule transition. Only settings/mode changes and schedule transitions cause these writes; sensor samples and each loop do not. Settings and persistent light commands increment the revision. On restart, heater/humidifier decisions are recomputed after sensor recovery and minimum OFF time; their prior ON bits are never blindly restored. Continuous-runtime timers start with the new run; latched faults survive reboot.
+- Remote commands expire after 60 seconds and are bound to a boot ID and settings revision. A dashboard change is pending until the device acknowledges it. A newer saved revision wins; the stale remote request is rejected. An expired command means acknowledgment was not received; inspect the latest device state rather than assuming it was never executed.
 - No device-to-server history backfill is stored during network outages; charts show gaps. Server history is retained for 90 days by default.
 - ON/OFF means the firmware's **commanded state**, not measured appliance operation. There are no current sensors or relay feedback contacts.
 
-## Keypad and OLED
+## Web settings and OLED
 
-On the home screen, A/B/C cycle through readings, connectivity, and faults; D opens the menu. Inside the menu:
+The web dashboard is the settings interface. Save climate thresholds, schedules, limits, and automation enable/disable there. Light controls offer **Auto / On / Off**. Changes remain pending until the ESP32 confirms that it saved them; an undelivered or expired request does not replace the last acknowledged state. When the device reconnects, the server displays the device's saved state rather than replaying stale pending commands.
 
-| Key | Action |
-|---|---|
-| A / B | Previous/next field; while editing, increase/decrease |
-| C | Advance to the next field; accept the current edit first |
-| Digits | Enter a field value |
-| `#` | Edit/accept the selected field or execute the selected action |
-| `*` | Cancel the edit, or leave the menu |
-
-Temperature and humidity digit entry uses tenths: `245` means `24.5`. A/B can also enter negative temperature values. Schedule fields use four digits, e.g. `0830`. Runtime fields use seconds. Enable automation with `0` or `1`. Field edits remain a draft until **SAVE ALL SETTINGS** is selected. All bands, schedules, and safety fields must be valid to save; nothing is prefilled as an animal-care recommendation.
-
-The light menu cycles Auto → On → Off → Auto. The clock action accepts **YYYYMMDDHHMM**, in Tehran time, e.g. a date you enter from your current clock. Clock entry is also available using `tools/device.py ... clock YYYYMMDDHHMM`.
+The 128×64 SSD1306 OLED is read-only. Every six seconds it cycles through live status, climate settings, light selections/schedules, and safety limits/faults. It shows commanded output states, Wi-Fi/server status, storage health, and **Using saved schedule** when the clock is unavailable. There are no keys or on-device menus.
 
 ## Development and checks
 

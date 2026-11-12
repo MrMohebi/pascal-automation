@@ -33,15 +33,17 @@ inline bool valid(const Config &c) {
 inline bool within(int minute, int start, int end) {
   return start < end ? minute >= start && minute < end : minute >= start || minute < end;
 }
-inline int secondsToTransition(int secondOfDay, int start, int end) {
-  int a = (start * 60 - secondOfDay + 86400) % 86400, b = (end * 60 - secondOfDay + 86400) % 86400;
-  return std::min(a == 0 ? 86400 : a, b == 0 ? 86400 : b);
-}
 enum Fault : uint8_t { Overheat = 1, HeaterTimeout = 2, HumidifierTimeout = 4 };
 struct Override {
-  int mode = -1;
-  int64_t until = 0;
-  uint32_t started = 0, duration = 0;
+  int mode = -1; // Durable selection: Auto=-1, Off=0, On=1.
+};
+struct ScheduleState {
+  bool known = false, day = false, lights[2] = {false, false};
+  bool operator==(const ScheduleState &other) const {
+    return known == other.known && day == other.day && lights[0] == other.lights[0] &&
+           lights[1] == other.lights[1];
+  }
+  bool operator!=(const ScheduleState &other) const { return !(*this == other); }
 };
 
 class Controller {
@@ -53,6 +55,7 @@ public:
   uint32_t sampleAt = 0;
   bool sampled = false, sampleValid = false;
   Override overrides[2];
+  ScheduleState scheduleState;
   const char *reason = "unconfigured";
   void begin(uint32_t now) {
     for (int i = 0; i < 4; i++)
@@ -64,8 +67,6 @@ public:
     stop(now);
     config = c;
     configured = true;
-    overrides[0] = Override{};
-    overrides[1] = Override{};
     return true;
   }
   void sample(double t, double rh, uint32_t now) {
@@ -87,21 +88,26 @@ public:
     stop(now);
     return true;
   }
-  bool overrideLight(int light, int mode, int64_t epoch, int secondsOfDay, uint32_t now) {
+  bool overrideLight(int light, int mode, uint32_t now) {
     if (light < 0 || light > 1 || mode < -1 || mode > 1 || !configured)
       return false;
-    if (mode == -1) {
-      overrides[light] = Override{};
-      return true;
-    }
-    if (!config.enabled || faults || !sensorReady(now) || epoch < 1704067200)
+    if (mode != -1 && (!config.enabled || faults || !sensorReady(now)))
       return false;
-    int duration = secondsToTransition(secondsOfDay, light ? config.light2_on : config.light1_on,
-                                       light ? config.light2_off : config.light1_off);
-    overrides[light] = {mode, epoch + duration, now, uint32_t(duration) * 1000};
+    overrides[light].mode = mode;
     return true;
   }
-  void tick(uint32_t now, bool clockValid, int minute, int64_t epoch) {
+  void updateSchedule(bool clockValid, int minute) {
+    if (!configured || !clockValid)
+      return;
+    scheduleState.known = true;
+    scheduleState.day = within(minute, config.day_start, config.day_end);
+    scheduleState.lights[0] = within(minute, config.light1_on, config.light1_off);
+    scheduleState.lights[1] = within(minute, config.light2_on, config.light2_off);
+    isDay = scheduleState.day;
+  }
+  void tick(uint32_t now, bool clockValid, int minute, int64_t) {
+    updateSchedule(clockValid, minute);
+    isDay = scheduleState.day;
     if (!sampled || uint32_t(now - sampleAt) >= 10000)
       goodSamples = 0;
     if (configured && sampleValid && uint32_t(now - sampleAt) < 10000 &&
@@ -114,21 +120,17 @@ public:
         if (outputs[i] && uint32_t(now - onAt[i]) >= limit)
           faults |= (i ? HumidifierTimeout : HeaterTimeout);
       }
-    for (auto &o : overrides)
-      if (o.mode != -1 &&
-          (!clockValid || epoch >= o.until || uint32_t(now - o.started) >= o.duration))
-        o = Override{};
-    reason = !configured         ? "unconfigured"
-             : faults            ? "latched fault"
-             : !config.enabled   ? "disabled"
-             : !clockValid       ? "clock invalid"
-             : !sensorReady(now) ? "sensor not ready"
-                                 : "running";
-    if (!configured || faults || !config.enabled || !clockValid || !sensorReady(now)) {
+    reason = !configured            ? "unconfigured"
+             : faults               ? "latched fault"
+             : !config.enabled      ? "disabled"
+             : !scheduleState.known ? "clock invalid"
+             : !sensorReady(now)    ? "sensor not ready"
+             : !clockValid          ? "running saved state"
+                                    : "running";
+    if (!configured || faults || !config.enabled || !scheduleState.known || !sensorReady(now)) {
       stop(now);
       return;
     }
-    isDay = within(minute, config.day_start, config.day_end);
     double values[2] = {temperature, humidity};
     double lo[2] = {isDay ? config.day_temp_on : config.night_temp_on,
                     isDay ? config.day_rh_on : config.night_rh_on};
@@ -142,11 +144,7 @@ public:
         set(i, true, now);
     }
     for (int i = 0; i < 2; i++)
-      set(i + 2,
-          overrides[i].mode == -1 ? within(minute, i ? config.light2_on : config.light1_on,
-                                           i ? config.light2_off : config.light1_off)
-                                  : overrides[i].mode == 1,
-          now);
+      set(i + 2, overrides[i].mode == -1 ? scheduleState.lights[i] : overrides[i].mode == 1, now);
   }
 
 private:

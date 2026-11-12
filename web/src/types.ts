@@ -29,6 +29,8 @@ export type Device = {
   sample_age_ms: number | null;
   sensor_ok: boolean;
   clock_ok: boolean;
+  schedule_cached?: boolean;
+  light_modes_persistent?: boolean;
   simulated: boolean;
   profile: string;
   reason: string;

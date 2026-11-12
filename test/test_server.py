@@ -45,6 +45,8 @@ def telemetry():
         sample_age_ms=100,
         sensor_ok=True,
         clock_ok=True,
+        schedule_cached=False,
+        light_modes_persistent=True,
         simulated=True,
         profile="unknown",
         reason="unconfigured",
@@ -332,3 +334,54 @@ def test_secure_session_cookie(tmp_path):
     assert "HttpOnly" in response.headers["set-cookie"]
     assert "SameSite=strict" in response.headers["set-cookie"]
     assert client.get("/api/status").status_code == 200
+
+
+def test_saved_schedule_alert_after_offline_restart(rig):
+    client, _ = rig
+    data = telemetry()
+    data.update(
+        config=configuration(),
+        clock_ok=False,
+        schedule_cached=True,
+        profile="night",
+        reason="running saved state",
+        outputs=[False, True, False, True],
+    )
+    assert sync(rig, data).status_code == 200
+    status = client.get("/api/status").json()
+    assert any("using saved profile" in message for message in status["alerts"])
+    assert not any(
+        "Clock invalid; outputs inhibited" in message for message in status["alerts"]
+    )
+    assert status["device"]["outputs"] == data["outputs"]
+
+
+@pytest.mark.parametrize(
+    "reported_revision,reported_mode,expected",
+    [(1, 1, "applied"), (0, 1, "rejected"), (1, 0, "rejected")],
+)
+def test_persistent_light_requires_saved_revision_and_matching_mode(
+    rig, reported_revision, reported_mode, expected
+):
+    client, _ = rig
+    data = telemetry()
+    data.update(config=configuration(), profile="day", schedule_cached=True)
+    sync(rig, data)
+    response = client.post(
+        "/api/overrides",
+        json={"base_revision": 0, "boot_id": "test-boot", "light": 0, "mode": 1},
+    )
+    assert response.status_code == 200
+    data.update(
+        revision=reported_revision,
+        overrides=[dict(mode=reported_mode, until=0), dict(mode=-1, until=0)],
+        result=dict(id=response.json()["id"], status="applied", message="Saved"),
+    )
+    assert sync(rig, data).status_code == 200
+    assert client.get("/api/status").json()["commands"][0]["status"] == expected
+    if expected == "applied":
+        data.update(boot_id="new-boot", clock_ok=False, result=None)
+        assert sync(rig, data).status_code == 200
+        restored = client.get("/api/status").json()["device"]
+        assert restored["overrides"][0]["mode"] == 1
+        assert restored["revision"] == 1

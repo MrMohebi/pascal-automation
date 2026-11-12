@@ -183,47 +183,59 @@ int main() {
     tests++;
   }
   {
-    assert(secondsToTransition(479 * 60, 480, 1200) == 60);
-    assert(secondsToTransition(480 * 60, 480, 1200) == 720 * 60);
-    assert(secondsToTransition(1439 * 60, 480, 1200) == 481 * 60);
+    auto c = ready();
+    c.tick(10000, true, 479, epoch);
+    assert(!c.scheduleState.day && !c.scheduleState.lights[0]);
+    c.tick(10000, true, 480, epoch);
+    assert(c.scheduleState.day && c.scheduleState.lights[0]);
     tests++;
   }
   {
     auto c = ready();
     c.sample(27, 55, 10000);
-    assert(c.overrideLight(0, 0, epoch, 479 * 60, 10000));
+    assert(c.overrideLight(0, 0, 10000));
     c.tick(10000, true, 600, epoch);
     assert(!c.outputs[2]);
     c.sample(27, 55, 70000);
     c.tick(70000, true, 600, epoch + 60);
-    assert(c.outputs[2] && c.overrides[0].mode == -1);
+    assert(!c.outputs[2] && c.overrides[0].mode == 0);
+    assert(c.overrideLight(0, -1, 70000));
+    c.tick(70000, true, 600, epoch + 60);
+    assert(c.outputs[2]);
     tests++;
   }
   {
     auto c = ready();
-    assert(c.overrideLight(0, 0, epoch, 479 * 60, 10000));
+    assert(c.overrideLight(0, 0, 10000));
     c.sample(27, 55, 70000);
     c.tick(70000, true, 600, epoch - 10);
-    assert(c.overrides[0].mode == -1);
+    assert(c.overrides[0].mode == 0);
     tests++;
   }
   {
     auto c = ready();
-    assert(!c.overrideLight(0, 1, 0, 600 * 60, 10000));
-    assert(!c.overrideLight(3, 1, epoch, 0, 10000));
-    assert(!c.overrideLight(0, 8, epoch, 0, 10000));
+    assert(c.overrideLight(0, 1, 10000));
+    assert(!c.overrideLight(3, 1, 10000));
+    assert(!c.overrideLight(0, 8, 10000));
     tests++;
   }
   {
     auto c = ready();
-    assert(c.overrideLight(0, 1, epoch, 0, 10000));
+    assert(c.overrideLight(0, 1, 10000));
     Controller reboot;
     reboot.begin(0);
     reboot.apply(c.config, 0);
+    c.updateSchedule(true, 600);
+    reboot.scheduleState = c.scheduleState;
+    reboot.overrides[0] = c.overrides[0];
     reboot.faults = c.faults;
     reboot.tick(0, false, 0, 0);
-    allOff(reboot);
-    assert(reboot.overrides[0].mode == -1);
+    allOff(reboot); // Sensor recovery must precede restored commands.
+    reboot.sample(27, 55, 2500);
+    reboot.sample(27, 55, 5000);
+    reboot.sample(27, 55, 10000);
+    reboot.tick(10000, false, 0, 0);
+    assert(reboot.outputs[2] && reboot.overrides[0].mode == 1);
     tests++;
   }
   {
@@ -271,7 +283,42 @@ int main() {
     auto c = ready();
     c.tick(10000, true, 600, epoch);
     c.sample(23, 35, 12500);
-    c.tick(12500, false, 600, 0);
+    c.tick(12500, false, 0, 0);
+    assert(c.outputs[0] && c.outputs[1] && c.outputs[2] && c.isDay);
+    assert(std::string(c.reason) == "running saved state");
+    tests++;
+  }
+  {
+    auto c = ready();
+    c.tick(10000, true, 1300, epoch);
+    c.tick(10000, false, 0, 0);
+    assert(!c.isDay && !c.outputs[2] && c.outputs[3]);
+    c.tick(10000, true, 600, epoch);
+    assert(c.isDay && c.outputs[2] && !c.outputs[3]);
+    tests++;
+  }
+  {
+    auto c = ready();
+    c.tick(10000, true, 600, epoch);
+    assert(c.overrideLight(1, 1, 10000));
+    auto cfg = c.config;
+    cfg.day_rh_on = 39;
+    assert(c.apply(cfg, 10000));
+    c.tick(10000, false, 0, 0);
+    assert(c.overrides[1].mode == 1 && c.outputs[3]);
+    c.sample(NAN, NAN, 12500);
+    c.tick(12500, false, 0, 0);
+    allOff(c);
+    tests++;
+  }
+  {
+    auto c = ready();
+    c.tick(10000, true, 600, epoch);
+    for (uint32_t n = 12500; n <= 30000; n += 2500) {
+      c.sample(23, 35, n);
+      c.tick(n, false, 0, 0);
+    }
+    assert(c.faults & HeaterTimeout);
     allOff(c);
     tests++;
   }

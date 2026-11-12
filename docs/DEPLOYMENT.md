@@ -29,6 +29,10 @@ docker compose -f compose.yaml -f compose.https.yaml logs --tail=100
 
 To update later, run `git pull` and repeat the same `up -d --build` command. The named database volume and `.env` survive container replacement. See [Docker Compose startup options](https://docs.docker.com/reference/cli/docker/compose/up/) for the command behavior.
 
+## Updating for the web-only controller
+
+Deploy this server version before using layout-v3 firmware: it accepts the new saved-schedule and persistent-light telemetry fields. Run `git pull` and your chosen Compose `up -d --build` command. Existing `.env` credentials and database volumes are retained; older firmware telemetry remains accepted. Do not rerun credential generation to perform an update.
+
 ## Server credentials
 
 Alternatively, if Python is already installed, generate credentials without building the image first. From this project directory:
@@ -59,7 +63,7 @@ docker compose -f compose.yaml -f compose.https.yaml up -d --build
 
 Caddy obtains and renews certificates. Existing proxies already using 80/443 should use the previous option instead. The device makes outbound HTTPS requests to this hostname; no router forwarding is needed at home.
 
-For ESP32 provisioning, supply the root CA PEM matching the server's chain, obtained from the CA's official distribution. Check the certificate chain before choosing a CA; do not copy a leaf certificate as a long-lived trust anchor and do not disable certificate verification. Renewing a leaf certificate under the same trusted CA needs no firmware update; a CA change requires USB reprovisioning. Firmware gets time from NTP before TLS verification; the keypad clock is the fallback.
+For ESP32 provisioning, supply the root CA PEM matching the server's chain, obtained from the CA's official distribution. Check the certificate chain before choosing a CA; do not copy a leaf certificate as a long-lived trust anchor and do not disable certificate verification. Renewing a leaf certificate under the same trusted CA needs no firmware update; a CA change requires USB reprovisioning. Firmware gets time from NTP before TLS verification; USB clock entry is the fallback.
 
 ## Local development
 

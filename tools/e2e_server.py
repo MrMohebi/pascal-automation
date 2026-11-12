@@ -43,6 +43,15 @@ def scenario(name: str):
             if state["config"]:
                 state["config"]["day_temp_on"] += 0.1
             return {"ok": True}
+        if name == "restart-offline-clock":
+            state.update(
+                boot_id="restarted-device",
+                clock_ok=False,
+                schedule_cached=True,
+                reason="running saved state",
+                result=None,
+            )
+            return {"ok": True}
         if name == "offline":
             paused = True
             with sqlite3.connect(settings.database) as conn:
@@ -60,6 +69,7 @@ def scenario(name: str):
                 config=configuration(),
                 revision=1,
                 profile="day",
+                schedule_cached=True,
                 reason="running",
                 outputs=[False, False, True, True],
             )
@@ -122,8 +132,9 @@ def device():
                     mode = command["payload"]["mode"]
                     state["overrides"][light] = {
                         "mode": mode,
-                        "until": int(time.time()) + 3600,
+                        "until": 0,
                     }
+                    state["revision"] += 1
                     state["outputs"][light + 2] = mode != 0
                 elif command["kind"] == "acknowledge":
                     state["faults"] = []

@@ -74,7 +74,7 @@ test("settings save acknowledges a new revision", async ({ page }) => {
   ).toHaveValue("23.5");
 });
 
-test("keypad revision conflict preserves edits and blocks saving", async ({
+test("another browser revision conflict preserves edits and blocks saving", async ({
   page,
   request,
 }) => {
@@ -139,4 +139,15 @@ test("faults appear and acknowledge through the real API", async ({
   await expect(
     page.getByText("Latched fault: overtemperature", { exact: true }),
   ).not.toBeVisible({ timeout: 15000 });
+});
+
+
+test("saved light selection survives restart without a clock", async ({ page, request }) => {
+  await page.getByRole("button", { name: "Light 1 Off", exact: true }).click();
+  await expect(page.getByText("Saved manual mode · survives restart")).toBeVisible({ timeout: 15000 });
+  await request.post("/__test/scenario/restart-offline-clock");
+  await expect(page.getByText("Holding saved automatic state")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Saved manual mode · survives restart")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Light 1 Off", exact: true })).toHaveClass(/selected/);
+  await expect(page.getByText("Clock unavailable; using saved profile and automatic light states until time returns")).toBeVisible();
 });

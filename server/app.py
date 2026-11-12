@@ -215,13 +215,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             "rejected",
                             "Reported settings do not match requested settings",
                         )
+                    if (
+                        status == "applied"
+                        and row["kind"] == "override"
+                        and body.light_modes_persistent
+                    ):
+                        payload = json.loads(row["payload"])
+                        selected = body.overrides[payload["light"]]
+                        if (
+                            body.revision != row["base_revision"] + 1
+                            or selected.mode != payload["mode"]
+                            or selected.until != 0
+                        ):
+                            status, message = (
+                                "rejected",
+                                "Reported saved light mode does not match request",
+                            )
                     conn.execute(
                         "UPDATE commands SET status=?,message=? WHERE id=?",
                         (status, message, row["id"]),
                     )
             expire(conn, now)
             conn.execute(
-                "UPDATE commands SET status='rejected',message='Device restarted or settings changed locally' WHERE status='pending' AND (boot_id!=? OR base_revision!=?)",
+                "UPDATE commands SET status='rejected',message='Device restarted or saved settings changed' WHERE status='pending' AND (boot_id!=? OR base_revision!=?)",
                 (body.boot_id, body.revision),
             )
             conn.execute(
@@ -275,7 +291,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not reported["sensor_ok"]:
                 alerts.append("Sensor unavailable or recovering; outputs inhibited")
             if not reported["clock_ok"]:
-                alerts.append("Clock invalid; outputs inhibited")
+                alerts.append(
+                    "Clock unavailable; using saved profile and automatic light states until time returns"
+                    if reported.get("schedule_cached")
+                    else "Clock unavailable and no saved schedule; outputs inhibited"
+                )
             if not reported["display_ok"]:
                 alerts.append("OLED not detected")
             if not reported["config"]:
