@@ -1,26 +1,11 @@
 services:
   pascal:
-    image: ${PASCAL_IMAGE:-pascal-watcher:local}
-    build: .
+    image: ghcr.io/mrmohebi/pascal-automation:latest
     restart: unless-stopped
     env_file: .env
-    environment:
-      DATABASE_PATH: /data/pascal.sqlite
-      COOKIE_SECURE: "true"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     volumes:
       - pascal_data:/data
-    read_only: true
-    tmpfs:
-      - /tmp
-    security_opt:
-      - no-new-privileges:true
-    cap_drop: [ALL]
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
 volumes:
   pascal_data:

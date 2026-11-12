@@ -18,15 +18,12 @@ def main():
             ".env already exists; preserve it or move it aside deliberately before generating new credentials."
         )
     username = input("Admin username [admin]: ").strip() or "admin"
-    domain = input("Public hostname (blank for local development): ").strip()
-    if any(c in username + domain for c in "\n\r'\"$ "):
-        raise SystemExit(
-            "Use a username/hostname without quotes, spaces or shell characters."
-        )
+    if any(c in username for c in "\n\r'\"$ "):
+        raise SystemExit("Use a username without quotes, spaces or shell characters.")
     password = getpass.getpass("Admin password (at least 12 characters): ")
     if len(password) < 12 or password != getpass.getpass("Repeat password: "):
         raise SystemExit("Password too short or confirmation did not match.")
-    content = f"ADMIN_USER={username}\nADMIN_PASSWORD_HASH='{hash_password(password)}'\nDEVICE_TOKEN={secrets.token_urlsafe(48)}\nCOOKIE_SECURE=true\nRETENTION_DAYS=90\nPASCAL_DOMAIN={domain}\n"
+    content = f"ADMIN_USER={username}\nADMIN_PASSWORD_HASH='{hash_password(password)}'\nDEVICE_TOKEN={secrets.token_urlsafe(48)}\n"
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as file:
         file.write(content)

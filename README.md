@@ -20,7 +20,7 @@ GitHub Actions builds and tests the server image on pushes to `main`, then publi
 
    If `pio` is not on PATH on this Mac, use `~/.platformio/penv/bin/pio`. The firmware uses a 3 MB application partition on a 4 MB board; USB updates only, no OTA. Platform/framework and direct library versions are pinned in `platformio.ini`.
 
-3. Follow the [Docker-only server quick start](docs/DEPLOYMENT.md#quick-start-with-docker-only). Run `sh tools/setup_server_docker.sh` on your server to build the image and create credentials, then start the dashboard behind HTTPS using Compose. Host Python and Node are not required.
+3. Follow the [server setup](docs/DEPLOYMENT.md#run-the-github-packages-image). Run `sh tools/setup_server_docker.sh` once to create credentials, then `docker compose up -d`. The single Compose file pulls the published image; point your existing HTTPS proxy to port 8000. Host Python and Node are not required.
 4. Provision the board from your laptop:
 
    ```sh

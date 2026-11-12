@@ -1,5 +1,13 @@
 # Verification
 
+## Single Compose file using GHCR — 2026-11-12
+
+- `compose.yaml` now contains one service using `ghcr.io/mrmohebi/pascal-automation:latest`, port 8000, `.env`, restart policy, and the existing `pascal_data` volume. The separate HTTPS Compose file and Caddy configuration were removed; the owner selected an existing reverse proxy.
+- Credential generation now creates only admin username, password hash, and device token. Verified the password hash, mode 0600, and refusal to overwrite an existing `.env`.
+- An isolated copy of the actual Compose file ran the published image successfully: dashboard, login, authenticated status, and session/database persistence across container recreation passed. The disposable local test used a random loopback port and disabled secure cookies only in its temporary `.env`; production secure-cookie defaults and the owner's HTTPS proxy were not changed or tested.
+- Temporary containers, volume, and credentials were removed. No production server deployment was performed.
+
+
 ## GPIO4 correction and larger OLED pages — 2026-11-12
 
 - The owner corrected the sensor connection to GPIO4 (J2-13) and confirmed the 128×64 OLED is readable. Wiring documentation and firmware now match GPIO4.
