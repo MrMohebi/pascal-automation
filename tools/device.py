@@ -22,8 +22,15 @@ def exchange(port, request):
         link.reset_input_buffer()
         link.write((json.dumps(request, separators=(",", ":")) + "\n").encode())
         link.flush()
-        deadline = time.monotonic() + 10
+        network_check = request["op"] == "network-status"
+        deadline = time.monotonic() + (45 if network_check else 10)
+        next_check = time.monotonic() + 2
+        last_status = None
         while time.monotonic() < deadline:
+            if network_check and time.monotonic() >= next_check:
+                link.write(b'{"op":"network-status"}\n')
+                link.flush()
+                next_check = time.monotonic() + 2
             try:
                 response = json.loads(link.readline().decode(errors="replace"))
             except (ValueError, UnicodeError):
@@ -33,7 +40,13 @@ def exchange(port, request):
             if (request["op"] == "status" and "protocol" in response) or response.get(
                 "ok"
             ):
+                if network_check:
+                    last_status = response
+                    if not response.get("server_connected"):
+                        continue
                 return response
+        if last_status is not None:
+            return last_status
         raise RuntimeError(
             "No reply from Pascal firmware; check the port and close other serial monitors."
         )
@@ -46,6 +59,9 @@ def main():
     parser.add_argument("--port", required=True)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status")
+    commands.add_parser(
+        "network-status", help="Check Wi-Fi and successful server synchronization"
+    )
     clock = commands.add_parser("clock")
     clock.add_argument("value", help="Tehran local time as YYYYMMDDHHMM")
     provision = commands.add_parser("provision")

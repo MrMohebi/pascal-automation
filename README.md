@@ -35,7 +35,10 @@ GitHub Actions builds and tests the server image on pushes to `main`, then publi
 
    ```sh
    .venv/bin/python tools/device.py --port /dev/cu.usbserial-0001 status
+   .venv/bin/python tools/device.py --port /dev/cu.usbserial-0001 network-status
    ```
+
+   `network-status` reports Wi-Fi connection, the server URL, the age of the last successful HTTPS sync, and firmware identity without exposing credentials. A successful sync means the server returned HTTP 200 with the expected protocol response. Opening USB can reset the board; allow it to reconnect before checking.
 
 6. Enter your confirmed settings from the dashboard. Save with automation disabled first; then enable it to inspect **simulated commanded states**.
 

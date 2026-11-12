@@ -1,5 +1,16 @@
 # Verification
 
+## Live server provisioning and USB flash — 2026-11-12
+
+- Built and flashed the token-free firmware to the attached ESP32-D0WD-V3. Rechecked GPIO4 DHT22, OLED SDA21/SCL22, relay assignment 25/26/27/14, simulation-only build, and the installed partition table before writing the application.
+- All eleven ROM-loader blocks at 57600 baud passed verification, followed by full-image verification. Firmware size: 1,334,672 bytes; SHA-256: `8fdcca8f9c8be2e5885df6ed6098eb95c6f208c53bef6f623595633313b8ae32`. Running firmware MD5 matched the uploaded file: `621679dec5b6b47ac4f2a9b6b8dc97cf`.
+- Provisioned the owner's Wi-Fi and `https://ps.ops.zedio.ir` into NVS over USB without logging the password. The root CA was obtained from a verified TLS chain (ISRG Root X1); the server health endpoint returned HTTP 200 using that CA.
+- Added `tools/device.py ... network-status`, which waits up to 45 seconds for reconnect after USB reset and reports successful server sync age without credentials. Its USB-only response does not change the telemetry schema.
+- Observed repeated successful board-to-server HTTPS syncs (HTTP 200 and expected protocol response), healthy DHT22/OLED/storage, and valid clock. Explicit hardware reset changed the boot ID, then the board rejoined Wi-Fi and synced using saved credentials. Final reading: 23.9 °C / 33.8% RH; RSSI -41 dBm. These are sensor readings, not an independent calibration.
+- No climate settings are configured yet. Outputs remain simulated and OFF. No authenticated dashboard session or physical relay operation was tested. Private transfer logs and commissioning snapshots remain under ignored `secrets/`.
+- The PlatformIO build, 27 control scenarios, storage/configuration checks, simulated-driver zero-GPIO check, and USB diagnostic response handling passed.
+
+
 ## Password-only setup and open device sync — 2026-11-12
 
 - The only required environment setting is now `ADMIN_PASSWORD`. Setup and dashboard login ask only for a password. Existing password hashes remain accepted for upgrades; `ADMIN_PASSWORD` takes precedence.

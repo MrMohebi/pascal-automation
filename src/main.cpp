@@ -204,6 +204,20 @@ void serialInput() {
       snapshot(status);
       serializeJson(status, Serial);
       Serial.println();
+    } else if (op == "network-status") {
+      JsonDocument status;
+      uint32_t lastSync = network.lastSuccess;
+      status["ok"] = true;
+      status["wifi_connected"] = WiFi.status() == WL_CONNECTED;
+      status["server_url"] = network.url;
+      status["server_connected"] = network.serverConnected && uint32_t(millis() - lastSync) < 30000;
+      if (lastSync)
+        status["last_sync_age_ms"] = uint32_t(millis() - lastSync);
+      else
+        status["last_sync_age_ms"] = nullptr;
+      status["firmware_md5"] = ESP.getSketchMD5();
+      serializeJson(status, Serial);
+      Serial.println();
     } else if (op == "clock") {
       Serial.println(setClock(d["value"].as<String>()) ? "{\"ok\":true}"
                                                        : "{\"error\":\"Invalid clock\"}");
