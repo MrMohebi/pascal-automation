@@ -2,7 +2,7 @@
 
 ESP32 terrarium monitoring and control, with a 128×64 status OLED, and a private web dashboard.
 
-**The default `esp32dev` build is simulated: it never configures or writes the four relay GPIOs.** The `esp32dev-relays` build drives the owner's confirmed active-HIGH relay inputs on GPIO25/26/27/14. The DHT22, OLED, storage, Wi-Fi, and HTTPS synchronization are real. No husbandry targets are included. Four of the eight relay channels are reserved and have no assigned GPIOs.
+**The default `esp32dev` build is simulated: it never configures or writes the four relay GPIOs.** The `esp32dev-relays` build drives the owner's confirmed active-LOW relay inputs on GPIO25/26/27/14. The DHT22, OLED, storage, Wi-Fi, and HTTPS synchronization are real. No husbandry targets are included. Four of the eight relay channels are reserved and have no assigned GPIOs.
 
 For the commissioned relay hardware, build with `pio run -e esp32dev-relays` and upload with `pio run -e esp32dev-relays -t upload --upload-port /dev/cu.usbserial-0001`. This build requires the relay compatibility and independent heater protection described in [commissioning](docs/COMMISSIONING.md). Its OLED says **LIVE** and the dashboard removes the simulated label after synchronization. The saved **Enable automatic control** setting still controls whether outputs run.
 
@@ -46,7 +46,7 @@ GitHub Actions builds and tests the server image on pushes to `main`, then publi
 
 ## Operation
 
-- DHT22 reads every 2.5 seconds. Three consecutive valid readings are required. Any invalid reading, or ten seconds without a fresh sample, inhibits all four outputs.
+- DHT22 reads every 2.5 seconds. Failed reads are ignored and the last valid reading is used for up to two minutes. If no valid reading arrives for two minutes, the heater and humidifier turn off (lights keep following their schedule/selection). The first valid reading after that resumes climate control.
 - Heater and humidifier turn ON strictly below their ON thresholds and OFF at or above their OFF thresholds. Within the band they retain their previous states. Minimum OFF time applies to restart; shutdown never waits for a minimum run time.
 - Day/night climate profiles and both light schedules support midnight crossings. Equal ON/OFF times are rejected rather than interpreted as always-on.
 - Light ON/OFF selections are saved on the ESP32 and remain selected across schedule transitions, network loss, and restarts until you change them or choose Auto. Configuration changes preserve these selections. Safety interlocks always override the requested state.
@@ -62,7 +62,7 @@ GitHub Actions builds and tests the server image on pushes to `main`, then publi
 
 The web dashboard is the settings interface. Save climate thresholds, schedules, limits, and automation enable/disable there. Light controls offer **Auto / On / Off**. Changes remain pending until the ESP32 confirms that it saved them; an undelivered or expired request does not replace the last acknowledged state. When the device reconnects, the server displays the device's saved state rather than replaying stale pending commands.
 
-The 128×64 SSD1306 OLED is read-only and rotates pages every five seconds: temperature, humidity, heater/humidifier states, light states, connection status, and the active temperature/humidity targets. Readings use 3× text; output states and targets use 2× text. Small headings and a page counter provide context. Detailed schedules and safety settings stay on the dashboard. Faults interrupt the pages with a stopped-output warning. There are no keys or on-device menus.
+The 128×64 SSD1306 OLED is read-only and rotates pages every five seconds: temperature, humidity, heater/humidifier states, light states, connection status, and the active temperature/humidity targets. Readings use 3× text; output states and targets use 2× text. Small headings and a page counter provide context. Detailed schedules and safety settings stay on the dashboard. When there is a problem (fault, storage failure, or no valid sensor reading for two minutes), an extra **ERRORS** page is added to the rotation and the footer shows `ERR`. The data pages stay visible. There are no keys or on-device menus.
 
 ## Development and checks
 

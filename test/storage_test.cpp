@@ -35,8 +35,9 @@ int main() {
     uint32_t rev = 0;
     assert(afterPowerLoss.load(restored, rev) && rev == 7);
     restored.tick(0, false, 0, 0);
-    for (bool output : restored.outputs)
-      assert(!output);
+    // Before any sensor reading: climate off, saved light modes already apply.
+    assert(!restored.outputs[0] && !restored.outputs[1]);
+    assert(!restored.outputs[2] && restored.outputs[3]);
     recover(restored, 23, 35);
     assert(restored.isDay && restored.outputs[0] && restored.outputs[1]);
     assert(!restored.outputs[2] && restored.outputs[3]);

@@ -113,28 +113,53 @@ int main() {
     tests++;
   }
   {
+    // Failed reads inside the two-minute window keep using the last valid reading.
     auto c = ready();
     c.tick(10000, true, 600, epoch);
     c.sample(NAN, 35, 12500);
-    c.tick(12500, true, 600, epoch);
-    allOff(c);
-    c.sample(23, 35, 15000);
+    c.sample(NAN, NAN, 15000);
     c.tick(15000, true, 600, epoch);
-    allOff(c);
-    c.sample(23, 35, 17500);
-    c.tick(17500, true, 600, epoch);
-    allOff(c);
-    c.sample(23, 35, 20000);
-    c.tick(20000, true, 600, epoch);
-    assert(c.outputs[2]);
+    assert(c.sensorReady(15000) && c.failedReads == 2 && !c.lastReadOk);
+    assert(c.temperature == 23 && c.humidity == 35);
+    assert(c.outputs[0] && c.outputs[1] && c.outputs[2]);
+    c.sample(25, 45, 17500);
+    assert(c.failedReads == 0 && c.lastReadOk && c.sampleAt == 17500);
     tests++;
   }
   {
-    auto c = ready();
+    // Two minutes without a valid read: heater and humidifier stop, lights keep running.
+    auto cfg = example();
+    cfg.heater_max_seconds = 3600;
+    cfg.humidifier_max_seconds = 3600;
+    Controller c;
+    c.begin(0);
+    assert(c.apply(cfg, 0));
+    c.sample(23, 35, 10000);
     c.tick(10000, true, 600, epoch);
+    assert(c.outputs[0] && c.outputs[1] && c.outputs[2]);
+    c.sample(NAN, NAN, 129999);
+    c.tick(129999, true, 600, epoch);
+    assert(c.outputs[0] && c.outputs[1]);
+    c.tick(130000, true, 600, epoch);
+    assert(!c.sensorReady(130000));
+    assert(!c.outputs[0] && !c.outputs[1] && c.outputs[2] && !c.outputs[3]);
+    assert(std::string(c.reason) == "sensor stale; heat/mist off");
+    assert(c.overrideLight(1, 1, 130000));
+    c.tick(130000, true, 600, epoch);
+    assert(c.outputs[3] && !c.outputs[0]);
+    // One valid read restores climate control (after the minimum OFF time).
+    c.sample(23, 35, 140000);
+    c.tick(140000, true, 600, epoch);
+    assert(c.outputs[0] && c.outputs[1] && c.outputs[2] && c.outputs[3]);
+    tests++;
+  }
+  {
+    // Never sampled: lights follow the schedule, climate outputs stay off.
+    Controller c;
+    c.begin(0);
+    assert(c.apply(example(), 0));
     c.tick(20000, true, 600, epoch);
-    allOff(c);
-    assert(!c.sensorReady(20000));
+    assert(!c.outputs[0] && !c.outputs[1] && c.outputs[2]);
     tests++;
   }
   {
@@ -230,12 +255,11 @@ int main() {
     reboot.overrides[0] = c.overrides[0];
     reboot.faults = c.faults;
     reboot.tick(0, false, 0, 0);
-    allOff(reboot); // Sensor recovery must precede restored commands.
-    reboot.sample(27, 55, 2500);
-    reboot.sample(27, 55, 5000);
-    reboot.sample(27, 55, 10000);
+    // Lights restore without the sensor; climate waits for a valid reading.
+    assert(reboot.outputs[2] && !reboot.outputs[0] && !reboot.outputs[1]);
+    reboot.sample(23, 35, 10000);
     reboot.tick(10000, false, 0, 0);
-    assert(reboot.outputs[2] && reboot.overrides[0].mode == 1);
+    assert(reboot.outputs[0] && reboot.outputs[2] && reboot.overrides[0].mode == 1);
     tests++;
   }
   {
@@ -308,7 +332,7 @@ int main() {
     assert(c.overrides[1].mode == 1 && c.outputs[3]);
     c.sample(NAN, NAN, 12500);
     c.tick(12500, false, 0, 0);
-    allOff(c);
+    assert(c.outputs[3] && c.sensorReady(12500)); // Held reading, still running.
     tests++;
   }
   {

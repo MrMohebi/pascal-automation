@@ -5,7 +5,7 @@
 1. Keep all mains loads and relay inputs disconnected. Confirm `PASCAL_ENABLE_RELAYS=0` in PlatformIO.
 2. Confirm `simulated:true`, a readable 128×64 display on SDA21/SCL22, and DHT22 DATA on GPIO4. Verify DHT readings against an independent instrument at the sensor location.
 3. Enter actual, confirmed husbandry targets and schedules; do not use unit-test fixture values as care guidance. Test with automation disabled, then inspect simulated control decisions.
-4. Disconnect the sensor: all commanded outputs should turn off. Reconnect: three consecutive valid readings are required before operation can resume.
+4. Disconnect the sensor: the last valid reading is held for two minutes, then the heater and humidifier turn off and the OLED adds an ERRORS page. Lights continue. Reconnect: the first valid reading resumes climate control.
 5. Test night/day changes, midnight-crossing schedules, both saved light selections, and return to Auto. Verify cold boot without network restores the saved profile/light states after sensor recovery; establish time and verify schedules resume.
 6. Test overtemperature and runtime limits using controlled test inputs away from the animal. Faults must survive reset and remain off until acknowledged with a recovered sensor and temperature below the limit.
 7. Provision Wi-Fi/HTTPS and compare the board's serial status with the dashboard. Change settings and light selections from the dashboard and verify the OLED/USB status reflects the acknowledged revision. Reboot and confirm the same revision and selections return.
@@ -26,7 +26,7 @@ build_flags =
     -DPASCAL_HARDWARE_COMMISSIONED=1
 ```
 
-The owner confirmed a 5 V, eight-channel relay module with **active-HIGH, 3.3 V-compatible inputs**, and disconnected mains appliances for the initial relay checks. The named `esp32dev-relays` environment uses these flags; GPIO LOW is OFF and GPIO HIGH (3.3 V) is ON. These values apply to this confirmed setup, not every 5 V relay board. The repository's default build remains simulated. These flags are a deliberate commissioning boundary, not a claim that software can verify installed protection. The dashboard cannot enable physical mode remotely.
+The owner confirmed a 5 V, eight-channel relay module with **active-LOW inputs**, and disconnected mains appliances for the initial relay checks. The named `esp32dev-relays` environment uses these flags; GPIO HIGH (3.3 V) is OFF and GPIO LOW is ON (corrected from active-HIGH on 2026-11-15). These values apply to this confirmed setup, not every 5 V relay board. The repository's default build remains simulated. These flags are a deliberate commissioning boundary, not a claim that software can verify installed protection. The dashboard cannot enable physical mode remotely.
 
 Verify there is no relay pulse during power-up, reset, programming, brownout, missing sensor, missing saved schedule and invalid clock, or a watchdog reset. Confirm spare channels stay off. Measure actual appliance operation and cutoff behavior separately from GPIO/indicator state. Supervise initial operation with an independent thermometer; one ambient sensor cannot characterize the entire enclosure or basking surface.
 

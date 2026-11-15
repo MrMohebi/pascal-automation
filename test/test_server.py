@@ -301,6 +301,25 @@ def test_override_interlocks_and_ack(rig):
     assert client.get("/api/status").json()["commands"][0]["status"] == "rejected"
 
 
+def test_light_override_allowed_while_sensor_stale(rig):
+    client, _ = rig
+    data = telemetry()
+    data.update(config=configuration(), profile="day", sensor_ok=False)
+    sync(rig, data)
+    body = {"base_revision": 0, "boot_id": "test-boot", "light": 0, "mode": 1}
+    assert client.post("/api/overrides", json=body).status_code == 200
+    alerts = client.get("/api/status").json()["alerts"]
+    assert any("heater and humidifier off" in a for a in alerts)
+
+
+def test_held_sensor_reading_accepted_for_two_minutes(rig):
+    data = telemetry()
+    data["sample_age_ms"] = 119999
+    assert sync(rig, data).status_code == 200
+    data["sample_age_ms"] = 120000
+    assert sync(rig, data).status_code == 422
+
+
 def test_invalid_sensor_and_clock(rig):
     client, _ = rig
     data = telemetry()

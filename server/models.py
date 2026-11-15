@@ -92,7 +92,8 @@ class Telemetry(Model):
             self.temperature is None
             or self.humidity is None
             or self.sample_age_ms is None
-            or self.sample_age_ms >= 10000
+            # Firmware holds the last valid reading for up to two minutes.
+            or self.sample_age_ms >= 120000
         ):
             raise ValueError("Healthy sensor requires fresh, complete readings")
         return self

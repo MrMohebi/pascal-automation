@@ -279,7 +279,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         if reported:
             if not reported["sensor_ok"]:
-                alerts.append("Sensor unavailable or recovering; outputs inhibited")
+                alerts.append("No valid sensor reading for 2 minutes; heater and humidifier off")
             if not reported["clock_ok"]:
                 alerts.append(
                     "Clock unavailable; using saved profile and automatic light states until time returns"
@@ -369,7 +369,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     and (
                         not current["config"]["enabled"]
                         or current["faults"]
-                        or not current["sensor_ok"]
                     )
                 )
             ):

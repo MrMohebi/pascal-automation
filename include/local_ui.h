@@ -4,6 +4,7 @@
 #include <Adafruit_SSD1306.h>
 
 // Read-only OLED: large values, one topic per page, automatic rotation.
+// Problems add an ERRORS page to the rotation; data pages stay visible.
 class LocalUI {
 public:
   Adafruit_SSD1306 display{128, 64, &Wire, -1};
@@ -29,84 +30,108 @@ public:
     if (!present)
       return;
     display.clearDisplay();
-    const int pages = c.configured && c.scheduleState.known ? 7 : 5;
+    const bool sensorOk = c.sensorReady(now);
+    // Collect active problems; they get their own page instead of hiding the data.
+    const char *errors[5];
+    int errorCount = 0;
+    if (!storage)
+      errors[errorCount++] = "Storage failure";
+    if (c.faults & pascal::Overheat)
+      errors[errorCount++] = "Overtemperature";
+    if (c.faults & pascal::HeaterTimeout)
+      errors[errorCount++] = "Heater max runtime";
+    if (c.faults & pascal::HumidifierTimeout)
+      errors[errorCount++] = "Mist max runtime";
+    if (!sensorOk)
+      errors[errorCount++] = "DHT22 no data >2min";
+    const bool stopped = !storage || c.faults;
+    const int dataPages = c.configured && c.scheduleState.known ? 7 : 5;
+    const int pages = dataPages + (errorCount ? 1 : 0);
     const int page = (now / 5000) % pages;
-    if (!storage || c.faults) {
-      // Faults interrupt the carousel; do not hide them on a later page.
-      small(0, "OUTPUTS STOPPED");
-      large(20, 2, "FAULT");
-      small(46, !storage         ? "Storage failure"
-                : (c.faults & 1) ? "Overtemperature"
-                : (c.faults & 2) ? "Heater runtime"
-                                 : "Humidifier runtime");
-      small(56, "Check web dashboard");
-    } else {
-      if (page == 0 || page == 1) {
-        small(0, page == 0 ? "TEMPERATURE" : "HUMIDITY");
-        display.setCursor(0, 19);
-        if (c.sensorReady(now)) {
-          display.setTextSize(3);
-          if (page == 0)
-            display.printf("%.1fC", c.temperature);
-          else
-            display.printf("%.1f%%", c.humidity);
-        } else {
-          display.setTextSize(2);
-          display.print("NO DATA");
-        }
-        small(46, !c.sensorReady(now)      ? "Check DHT22"
-                  : !c.configured          ? "Setup via web"
-                  : !c.config.enabled      ? "Automation OFF"
-                  : !c.scheduleState.known ? "Waiting for clock"
-                  : !clock                 ? "Using saved profile"
-                  : c.isDay                ? "Day profile"
-                                           : "Night profile");
-      } else if (page == 2) {
-        small(0, "CLIMATE / COMMANDED");
-        display.setTextSize(2);
-        display.setCursor(0, 16);
-        display.printf("Heat %s", c.outputs[0] ? "ON" : "OFF");
-        display.setCursor(0, 36);
-        display.printf("Mist %s", c.outputs[1] ? "ON" : "OFF");
-      } else if (page == 3) {
-        small(0, "LIGHTS / COMMANDED");
-        display.setTextSize(2);
-        display.setCursor(0, 16);
-        display.printf("L1 %s", c.outputs[2] ? "ON" : "OFF");
-        display.setCursor(0, 36);
-        display.printf("L2 %s", c.outputs[3] ? "ON" : "OFF");
-      } else if (page == 4) {
-        small(0, "CONNECTION");
-        display.setTextSize(2);
-        display.setCursor(0, 16);
-        display.printf("WiFi %s", wifi ? "OK" : "--");
-        display.setCursor(0, 36);
-        display.printf("Web  %s", server ? "OK" : "--");
-      } else {
-        const bool temperature = page == 5;
-        small(0, temperature ? "ACTIVE TEMP TARGETS" : "ACTIVE RH TARGETS");
-        const double on = temperature ? (c.isDay ? c.config.day_temp_on : c.config.night_temp_on)
-                                      : (c.isDay ? c.config.day_rh_on : c.config.night_rh_on);
-        const double off = temperature ? (c.isDay ? c.config.day_temp_off : c.config.night_temp_off)
-                                       : (c.isDay ? c.config.day_rh_off : c.config.night_rh_off);
-        display.setTextSize(1);
-        display.setCursor(0, 20);
-        display.print("ON <");
-        display.setCursor(0, 40);
-        display.print("OFF>=");
-        display.setTextSize(2);
-        display.setCursor(36, 16);
-        display.printf("%.1f%s", on, temperature ? "C" : "%");
-        display.setCursor(36, 36);
-        display.printf("%.1f%s", off, temperature ? "C" : "%");
-      }
+    if (page == dataPages) {
       display.setTextSize(1);
-      display.setCursor(0, 56);
-      display.printf("%s %s", simulated ? "SIM" : "LIVE",
-                     c.scheduleState.known ? (c.isDay ? "DAY" : "NIGHT") : "");
-      display.setCursor(110, 56);
-      display.printf("%d/%d", page + 1, pages);
+      display.setCursor(0, 0);
+      display.printf("ERRORS (%d)", errorCount);
+      for (int i = 0; i < errorCount; i++)
+        small(10 + i * 9, errors[i]);
+      if (errorCount < 5)
+        small(10 + errorCount * 9, stopped ? "> All outputs OFF" : "> Heat/Mist OFF");
+    } else if (page == 0 || page == 1) {
+      small(0, page == 0 ? "TEMPERATURE" : "HUMIDITY");
+      display.setCursor(0, 19);
+      if (sensorOk) {
+        display.setTextSize(3);
+        if (page == 0)
+          display.printf("%.1fC", c.temperature);
+        else
+          display.printf("%.1f%%", c.humidity);
+      } else {
+        display.setTextSize(2);
+        display.print("NO DATA");
+      }
+      const uint32_t age = uint32_t(now - c.sampleAt) / 1000;
+      if (sensorOk && age >= 10) {
+        display.setTextSize(1);
+        display.setCursor(0, 46);
+        display.printf("Last good read %lus", (unsigned long)age);
+      } else
+        small(46, !sensorOk               ? "Check DHT22"
+                  : stopped               ? "Outputs stopped"
+                  : !c.configured         ? "Setup via web"
+                  : !c.config.enabled     ? "Automation OFF"
+                  : !c.scheduleState.known ? "Waiting for clock"
+                  : !clock                ? "Using saved profile"
+                  : c.isDay               ? "Day profile"
+                                          : "Night profile");
+    } else if (page == 2) {
+      small(0, "CLIMATE / COMMANDED");
+      display.setTextSize(2);
+      display.setCursor(0, 16);
+      display.printf("Heat %s", c.outputs[0] ? "ON" : "OFF");
+      display.setCursor(0, 36);
+      display.printf("Mist %s", c.outputs[1] ? "ON" : "OFF");
+    } else if (page == 3) {
+      small(0, "LIGHTS / COMMANDED");
+      display.setTextSize(2);
+      display.setCursor(0, 16);
+      display.printf("L1 %s", c.outputs[2] ? "ON" : "OFF");
+      display.setCursor(0, 36);
+      display.printf("L2 %s", c.outputs[3] ? "ON" : "OFF");
+    } else if (page == 4) {
+      small(0, "CONNECTION");
+      display.setTextSize(2);
+      display.setCursor(0, 16);
+      display.printf("WiFi %s", wifi ? "OK" : "--");
+      display.setCursor(0, 36);
+      display.printf("Web  %s", server ? "OK" : "--");
+    } else {
+      const bool temperature = page == 5;
+      small(0, temperature ? "ACTIVE TEMP TARGETS" : "ACTIVE RH TARGETS");
+      const double on = temperature ? (c.isDay ? c.config.day_temp_on : c.config.night_temp_on)
+                                    : (c.isDay ? c.config.day_rh_on : c.config.night_rh_on);
+      const double off = temperature ? (c.isDay ? c.config.day_temp_off : c.config.night_temp_off)
+                                     : (c.isDay ? c.config.day_rh_off : c.config.night_rh_off);
+      display.setTextSize(1);
+      display.setCursor(0, 20);
+      display.print("ON <");
+      display.setCursor(0, 40);
+      display.print("OFF>=");
+      display.setTextSize(2);
+      display.setCursor(36, 16);
+      display.printf("%.1f%s", on, temperature ? "C" : "%");
+      display.setCursor(36, 36);
+      display.printf("%.1f%s", off, temperature ? "C" : "%");
     }
+    display.setTextSize(1);
+    display.setCursor(0, 56);
+    display.printf("%s %s", simulated ? "SIM" : "LIVE",
+                   c.scheduleState.known ? (c.isDay ? "DAY" : "NIGHT") : "");
+    if (errorCount) {
+      display.setCursor(74, 56);
+      display.print("ERR");
+    }
+    display.setCursor(110, 56);
+    display.printf("%d/%d", page + 1, pages);
     display.display();
   }
 

@@ -33,6 +33,9 @@ inline bool valid(const Config &c) {
 inline bool within(int minute, int start, int end) {
   return start < end ? minute >= start && minute < end : minute >= start || minute < end;
 }
+// The DHT22 drops reads often. The last valid reading is used for up to two
+// minutes; after that, heater and humidifier stop until a valid read returns.
+constexpr uint32_t sensorHoldMs = 120000;
 enum Fault : uint8_t { Overheat = 1, HeaterTimeout = 2, HumidifierTimeout = 4 };
 struct Override {
   int mode = -1; // Durable selection: Auto=-1, Off=0, On=1.
@@ -51,9 +54,9 @@ public:
   Config config;
   bool configured = false, outputs[4] = {false, false, false, false}, isDay = false;
   double temperature = NAN, humidity = NAN;
-  uint8_t faults = 0, goodSamples = 0;
-  uint32_t sampleAt = 0;
-  bool sampled = false, sampleValid = false;
+  uint8_t faults = 0;
+  uint32_t sampleAt = 0, failedReads = 0; // sampleAt: time of the last valid read.
+  bool sampled = false, lastReadOk = false;
   Override overrides[2];
   ScheduleState scheduleState;
   const char *reason = "unconfigured";
@@ -70,16 +73,21 @@ public:
     return true;
   }
   void sample(double t, double rh, uint32_t now) {
+    lastReadOk =
+        std::isfinite(t) && std::isfinite(rh) && t >= -40 && t <= 80 && rh >= 0 && rh <= 100;
+    if (!lastReadOk) {
+      failedReads++; // Keep the previous valid reading.
+      return;
+    }
     temperature = t;
     humidity = rh;
     sampleAt = now;
     sampled = true;
-    sampleValid =
-        std::isfinite(t) && std::isfinite(rh) && t >= -40 && t <= 80 && rh >= 0 && rh <= 100;
-    goodSamples = sampleValid ? std::min(3, int(goodSamples) + 1) : 0;
+    failedReads = 0;
   }
+  // True while the last valid reading is less than two minutes old.
   bool sensorReady(uint32_t now) const {
-    return sampled && sampleValid && goodSamples >= 3 && uint32_t(now - sampleAt) < 10000;
+    return sampled && uint32_t(now - sampleAt) < sensorHoldMs;
   }
   bool acknowledge(uint32_t now) {
     if (!configured || !sensorReady(now) || temperature >= config.max_temperature)
@@ -91,7 +99,8 @@ public:
   bool overrideLight(int light, int mode, uint32_t now) {
     if (light < 0 || light > 1 || mode < -1 || mode > 1 || !configured)
       return false;
-    if (mode != -1 && (!config.enabled || faults || !sensorReady(now)))
+    (void)now; // Lights do not depend on the sensor.
+    if (mode != -1 && (!config.enabled || faults))
       return false;
     overrides[light].mode = mode;
     return true;
@@ -108,10 +117,8 @@ public:
   void tick(uint32_t now, bool clockValid, int minute, int64_t) {
     updateSchedule(clockValid, minute);
     isDay = scheduleState.day;
-    if (!sampled || uint32_t(now - sampleAt) >= 10000)
-      goodSamples = 0;
-    if (configured && sampleValid && uint32_t(now - sampleAt) < 10000 &&
-        temperature >= config.max_temperature)
+    const bool sensorOk = sensorReady(now);
+    if (configured && sensorOk && temperature >= config.max_temperature)
       faults |= Overheat;
     if (configured)
       for (int i = 0; i < 2; i++) {
@@ -124,11 +131,19 @@ public:
              : faults               ? "latched fault"
              : !config.enabled      ? "disabled"
              : !scheduleState.known ? "clock invalid"
-             : !sensorReady(now)    ? "sensor not ready"
+             : !sensorOk            ? "sensor stale; heat/mist off"
              : !clockValid          ? "running saved state"
                                     : "running";
-    if (!configured || faults || !config.enabled || !scheduleState.known || !sensorReady(now)) {
+    if (!configured || faults || !config.enabled || !scheduleState.known) {
       stop(now);
+      return;
+    }
+    for (int i = 0; i < 2; i++)
+      set(i + 2, overrides[i].mode == -1 ? scheduleState.lights[i] : overrides[i].mode == 1, now);
+    if (!sensorOk) {
+      // Stale sensor: stop heater and humidifier; lights keep running.
+      set(0, false, now);
+      set(1, false, now);
       return;
     }
     double values[2] = {temperature, humidity};
@@ -143,8 +158,6 @@ public:
                uint32_t(now - lastOff[i]) >= uint32_t(config.min_off_seconds) * 1000)
         set(i, true, now);
     }
-    for (int i = 0; i < 2; i++)
-      set(i + 2, overrides[i].mode == -1 ? scheduleState.lights[i] : overrides[i].mode == 1, now);
   }
 
 private:
