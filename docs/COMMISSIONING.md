@@ -22,11 +22,11 @@ Only after those checks should a separate commissioned build explicitly set all 
 ```ini
 build_flags =
     -DPASCAL_ENABLE_RELAYS=1
-    -DPASCAL_RELAY_ACTIVE_LOW=0
+    -DPASCAL_RELAY_ACTIVE_LOW=1
     -DPASCAL_HARDWARE_COMMISSIONED=1
 ```
 
-The owner confirmed a 5 V, eight-channel relay module with **active-HIGH, 3.3 V-compatible inputs**, and disconnected mains appliances for the initial relay checks. The named `esp32dev-relays` environment uses these flags; GPIO LOW is OFF and GPIO HIGH (3.3 V) is ON. These values apply to this confirmed setup, not every 5 V relay board. The repository's default build remains simulated. These flags are a deliberate commissioning boundary, not a claim that software can verify installed protection. The dashboard cannot enable physical mode remotely.
+The owner confirmed a 5 V, eight-channel relay module with **active-LOW, 3.3 V-compatible inputs** (corrected from an earlier active-HIGH record: with active-HIGH firmware every relay sat ON while commanded OFF), and disconnected mains appliances for the initial relay checks. The named `esp32dev-relays` environment uses these flags; GPIO HIGH (3.3 V) is OFF and GPIO LOW is ON. These values apply to this confirmed setup, not every 5 V relay board. The repository's default build remains simulated. These flags are a deliberate commissioning boundary, not a claim that software can verify installed protection. The dashboard cannot enable physical mode remotely.
 
 Verify there is no relay pulse during power-up, reset, programming, brownout, missing sensor, missing saved schedule and invalid clock, or a watchdog reset. Confirm spare channels stay off. Measure actual appliance operation and cutoff behavior separately from GPIO/indicator state. Supervise initial operation with an independent thermometer; one ambient sensor cannot characterize the entire enclosure or basking surface.
 
