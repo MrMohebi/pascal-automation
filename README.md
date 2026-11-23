@@ -10,7 +10,7 @@ For the commissioned relay hardware, build with `pio run -e esp32dev-relays` and
 
 GitHub Actions builds and tests the server image on pushes to `main`, then publishes `ghcr.io/mrmohebi/pascal-automation:latest` and a `sha-<full-commit>` tag for Linux AMD64. See [running the published image](docs/DEPLOYMENT.md#run-the-github-packages-image) to deploy without a server-side build.
 
-**Current wiring (layout v3):** DHT22 DATA **4**, OLED SDA **21** / SCL **22**, heater/humidifier/light 1/light 2 **25 / 26 / 27 / 14**. There is no keypad. Configure through the web dashboard; the display only shows status and saved settings.
+**Current wiring (layout v4):** DHT22 DATA **4**, OLED SDA **21** / SCL **22**, lamp / exhaust fan / humidifier **25 / 26 / 27** (GPIO14 held OFF, no heater). Each output has a saved **Auto / On / Off** mode on the dashboard. The lamp follows a daily schedule, the fan runs a repeating ON/OFF cycle with separate day and night timings, and the humidifier follows day/night humidity thresholds. There is no keypad. Configure through the web dashboard; the display only shows status and saved settings.
 
 1. Follow [low-voltage wiring](docs/WIRING.md). Leave every mains appliance disconnected during assembly and tests.
 2. Build and upload using PlatformIO:
@@ -62,7 +62,7 @@ GitHub Actions builds and tests the server image on pushes to `main`, then publi
 
 The web dashboard is the settings interface. Save climate thresholds, schedules, limits, and automation enable/disable there. Light controls offer **Auto / On / Off**. Changes remain pending until the ESP32 confirms that it saved them; an undelivered or expired request does not replace the last acknowledged state. When the device reconnects, the server displays the device's saved state rather than replaying stale pending commands.
 
-The 128×64 SSD1306 OLED is read-only and rotates pages every five seconds: temperature, humidity, heater/humidifier states, light states, connection status, and the active temperature/humidity targets. Readings use 3× text; output states and targets use 2× text. Small headings and a page counter provide context. Detailed schedules and safety settings stay on the dashboard. Faults interrupt the pages with a stopped-output warning. There are no keys or on-device menus.
+The 128×64 SSD1306 OLED is read-only and rotates pages every five seconds: (1) temperature and humidity, (2) Wi-Fi and web connection, and (3) errors — shown only while a fault, sensor, storage, setup, or clock problem exists. Everything else stays on the dashboard. There are no keys or on-device menus.
 
 ## Development and checks
 

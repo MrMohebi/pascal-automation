@@ -1,17 +1,14 @@
 #include "control.h"
 #include <cassert>
 #include <iostream>
-#include <limits>
+#include <string>
 using namespace pascal;
 constexpr int64_t epoch = 1800000000;
+constexpr uint32_t minute = 60000;
 Config example() {
   // Synthetic test values; these are not husbandry recommendations.
   Config c;
   c.enabled = true;
-  c.day_temp_on = 24;
-  c.day_temp_off = 26;
-  c.night_temp_on = 18;
-  c.night_temp_off = 20;
   c.day_rh_on = 40;
   c.day_rh_off = 50;
   c.night_rh_on = 60;
@@ -19,23 +16,30 @@ Config example() {
   c.max_temperature = 32;
   c.day_start = 480;
   c.day_end = 1200;
-  c.light1_on = 480;
-  c.light1_off = 1200;
-  c.light2_on = 1200;
-  c.light2_off = 480;
+  c.lamp_on = 540;
+  c.lamp_off = 1140;
+  c.fan_day_on_minutes = 10;
+  c.fan_day_off_minutes = 40;
+  c.fan_night_on_minutes = 5;
+  c.fan_night_off_minutes = 55;
   c.min_off_seconds = 10;
-  c.heater_max_seconds = 20;
   c.humidifier_max_seconds = 30;
   return c;
 }
-Controller ready(uint32_t now = 10000) {
+Controller ready(uint32_t now = 10000, double t = 23, double rh = 45) {
   Controller c;
   c.begin(0);
   assert(c.apply(example(), 0));
-  c.sample(23, 35, now - 5000);
-  c.sample(23, 35, now - 2500);
-  c.sample(23, 35, now);
+  c.sample(t, rh, now - 5000);
+  c.sample(t, rh, now - 2500);
+  c.sample(t, rh, now);
   return c;
+}
+// Keep the sensor fresh while advancing time.
+void run(Controller &c, uint32_t now, bool clock = true, int at = 600, double t = 23,
+         double rh = 45) {
+  c.sample(t, rh, now);
+  c.tick(now, clock, at, clock ? epoch : 0);
 }
 void allOff(const Controller &c) {
   for (bool s : c.outputs)
@@ -55,6 +59,7 @@ int main() {
     c.config.enabled = false;
     c.tick(10000, true, 600, epoch);
     allOff(c);
+    assert(std::string(c.reason) == "disabled");
     tests++;
   }
   {
@@ -64,55 +69,186 @@ int main() {
     tests++;
   }
   {
-    auto c = ready();
+    // Day, inside lamp schedule, dry air: everything runs; the fan starts its ON period.
+    auto c = ready(10000, 23, 35);
     c.tick(10000, true, 600, epoch);
-    assert(c.outputs[0] && c.outputs[1] && c.outputs[2] && !c.outputs[3]);
+    assert(c.outputs[Lamp] && c.outputs[Fan] && c.outputs[Humidifier]);
     tests++;
   }
   {
-    auto c = ready(9000);
-    c.tick(9999, true, 600, epoch);
-    assert(!c.outputs[0] && !c.outputs[1]);
-    tests++;
-  }
-  {
+    // Lamp follows its own schedule, not day/night.
     auto c = ready();
-    c.sample(24, 40, 10000);
+    c.tick(10000, true, 500, epoch);
+    assert(c.isDay && !c.outputs[Lamp]);
+    c.tick(10000, true, 540, epoch);
+    assert(c.outputs[Lamp]);
+    c.tick(10000, true, 1140, epoch);
+    assert(!c.outputs[Lamp]);
+    tests++;
+  }
+  {
+    // Day fan cycle: 10 min ON, 40 min OFF, repeating.
+    auto c = ready();
+    run(c, 10000);
+    assert(c.outputs[Fan]);
+    run(c, 10000 + 10 * minute - 1000);
+    assert(c.outputs[Fan]);
+    assert(c.fanCycleRemaining(10000 + 10 * minute - 1000) == 1);
+    run(c, 10000 + 10 * minute);
+    assert(!c.outputs[Fan]);
+    assert(c.fanCycleRemaining(10000 + 10 * minute) == 40 * 60);
+    run(c, 10000 + 49 * minute);
+    assert(!c.outputs[Fan]);
+    run(c, 10000 + 50 * minute);
+    assert(c.outputs[Fan]);
+    run(c, 10000 + 60 * minute);
+    assert(!c.outputs[Fan]);
+    tests++;
+  }
+  {
+    // Night uses its own cycle and restarts ON at the transition.
+    auto c = ready();
+    run(c, 10000, true, 600);
+    run(c, 10000 + 20 * minute, true, 600);
+    assert(!c.outputs[Fan]);
+    run(c, 10000 + 21 * minute, true, 1300, 23, 65);
+    assert(!c.isDay && c.outputs[Fan]);
+    run(c, 10000 + 26 * minute, true, 1300, 23, 65);
+    assert(!c.outputs[Fan]);
+    run(c, 10000 + 80 * minute, true, 1300, 23, 65);
+    assert(!c.outputs[Fan]);
+    run(c, 10000 + 81 * minute, true, 1300, 23, 65);
+    assert(c.outputs[Fan]);
+    tests++;
+  }
+  {
+    // ON=0 keeps the fan off; OFF=0 keeps it running.
+    auto c = ready();
+    auto cfg = example();
+    cfg.fan_day_on_minutes = 0;
+    assert(c.apply(cfg, 10000));
+    run(c, 10000);
+    assert(!c.outputs[Fan] && c.fanCycleRemaining(10000) == -1);
+    cfg.fan_day_on_minutes = 10;
+    cfg.fan_day_off_minutes = 0;
+    assert(c.apply(cfg, 10000));
+    for (uint32_t n = 10000; n < 10000 + 120 * minute; n += 7 * minute) {
+      run(c, n);
+      assert(c.outputs[Fan]);
+    }
+    tests++;
+  }
+  {
+    // Fan modes: forced OFF / ON win over the cycle; Auto restarts a fresh ON period.
+    auto c = ready();
+    run(c, 10000);
+    assert(c.setMode(Fan, ModeOff, 10000));
+    run(c, 12500);
+    assert(!c.outputs[Fan]);
+    run(c, 10000 + 20 * minute);
+    assert(c.setMode(Fan, ModeOn, 10000 + 20 * minute));
+    run(c, 10000 + 20 * minute);
+    assert(c.outputs[Fan]);
+    assert(c.setMode(Fan, ModeAuto, 10000 + 30 * minute));
+    run(c, 10000 + 30 * minute);
+    assert(c.outputs[Fan]);
+    run(c, 10000 + 40 * minute);
+    assert(!c.outputs[Fan]);
+    tests++;
+  }
+  {
+    // Humidifier hysteresis.
+    auto c = ready();
+    c.sample(23, 45, 10000);
     c.tick(10000, true, 600, epoch);
-    assert(!c.outputs[0] && !c.outputs[1]);
+    assert(!c.outputs[Humidifier]);
+    run(c, 12500, true, 600, 23, 39);
+    assert(c.outputs[Humidifier]);
+    run(c, 15000, true, 600, 23, 49);
+    assert(c.outputs[Humidifier]);
+    run(c, 17500, true, 600, 23, 50);
+    assert(!c.outputs[Humidifier]);
     tests++;
   }
   {
-    auto c = ready();
+    // Minimum OFF time delays restart, including when forced ON.
+    auto c = ready(10000, 23, 35);
+    run(c, 10000, true, 600, 23, 35);
+    assert(c.outputs[Humidifier]);
+    run(c, 12500, true, 600, 23, 55);
+    assert(!c.outputs[Humidifier]);
+    run(c, 15000, true, 600, 23, 35);
+    assert(!c.outputs[Humidifier]);
+    assert(c.setMode(Humidifier, ModeOn, 15000));
+    run(c, 17500, true, 600, 23, 55);
+    assert(!c.outputs[Humidifier]);
+    run(c, 22500, true, 600, 23, 55);
+    assert(c.outputs[Humidifier]);
+    tests++;
+  }
+  {
+    // Forced humidifier ignores humidity, but its maximum runtime still latches a fault.
+    auto c = ready(10000, 23, 80);
+    assert(c.setMode(Humidifier, ModeOn, 10000));
     c.tick(10000, true, 600, epoch);
-    c.sample(25, 45, 12500);
-    c.tick(12500, true, 600, epoch);
-    assert(c.outputs[0] && c.outputs[1]);
-    c.sample(26, 50, 15000);
-    c.tick(15000, true, 600, epoch);
-    assert(!c.outputs[0] && !c.outputs[1]);
+    assert(c.outputs[Humidifier]);
+    for (uint32_t n = 12500; n <= 40000; n += 2500)
+      run(c, n, true, 600, 23, 80);
+    assert(c.faults & HumidifierTimeout);
+    allOff(c);
     tests++;
   }
   {
     auto c = ready();
+    c.sample(23, 35, 10000);
     c.tick(10000, true, 600, epoch);
-    c.sample(27, 55, 12500);
-    c.tick(12500, true, 600, epoch);
-    c.sample(23, 35, 15000);
-    c.tick(15000, true, 600, epoch);
-    assert(!c.outputs[0]);
-    c.sample(23, 35, 22500);
-    c.tick(22500, true, 600, epoch);
-    assert(c.outputs[0]);
+    for (uint32_t n = 12500; n <= 40000; n += 2500)
+      run(c, n, true, 600, 23, 35);
+    assert(c.faults & HumidifierTimeout);
+    allOff(c);
+    tests++;
+  }
+  {
+    // Lamp force ON/OFF persists across schedule changes until Auto.
+    auto c = ready();
+    assert(c.setMode(Lamp, ModeOff, 10000));
+    run(c, 10000);
+    assert(!c.outputs[Lamp]);
+    assert(c.setMode(Lamp, ModeOn, 12500));
+    run(c, 12500, true, 1300);
+    assert(c.outputs[Lamp]);
+    assert(c.setMode(Lamp, ModeAuto, 15000));
+    run(c, 15000, true, 1300);
+    assert(!c.outputs[Lamp]);
     tests++;
   }
   {
     auto c = ready();
-    c.tick(10000, true, 1300, epoch);
-    assert(!c.outputs[0] && c.outputs[1] && !c.outputs[2] && c.outputs[3]);
+    assert(!c.setMode(3, ModeOn, 10000));
+    assert(!c.setMode(-1, ModeOn, 10000));
+    assert(!c.setMode(Lamp, 8, 10000));
+    assert(!c.setMode(Lamp, -2, 10000));
     tests++;
   }
   {
+    // Forcing ON is blocked by interlocks; Off and Auto stay available.
+    auto c = ready();
+    c.config.enabled = false;
+    assert(!c.setMode(Fan, ModeOn, 10000));
+    assert(c.setMode(Fan, ModeOff, 10000));
+    assert(c.setMode(Fan, ModeAuto, 10000));
+    c = ready();
+    c.faults = Overheat;
+    assert(!c.setMode(Lamp, ModeOn, 10000));
+    assert(c.setMode(Lamp, ModeOff, 10000));
+    c = ready();
+    assert(!c.setMode(Humidifier, ModeOn, 30000));
+    Controller unconfigured;
+    assert(!unconfigured.setMode(Lamp, ModeOff, 0));
+    tests++;
+  }
+  {
+    // Sensor failure stops all outputs, recovery needs three good samples.
     auto c = ready();
     c.tick(10000, true, 600, epoch);
     c.sample(NAN, 35, 12500);
@@ -126,7 +262,7 @@ int main() {
     allOff(c);
     c.sample(23, 35, 20000);
     c.tick(20000, true, 600, epoch);
-    assert(c.outputs[2]);
+    assert(c.outputs[Lamp] && c.outputs[Fan]);
     tests++;
   }
   {
@@ -138,41 +274,18 @@ int main() {
     tests++;
   }
   {
+    // Overtemperature latches everything OFF, including forced outputs.
     auto c = ready();
+    assert(c.setMode(Lamp, ModeOn, 10000));
     c.tick(10000, true, 600, epoch);
-    c.sample(32, 35, 12500);
-    c.tick(12500, true, 600, epoch);
+    run(c, 12500, true, 600, 32);
     allOff(c);
     assert(c.faults & Overheat);
     assert(!c.acknowledge(12500));
-    c.sample(25, 35, 15000);
-    c.tick(15000, true, 600, epoch);
+    run(c, 15000, true, 600, 25);
     allOff(c);
     assert(c.acknowledge(15000));
     assert(!c.faults);
-    tests++;
-  }
-  {
-    auto c = ready();
-    c.tick(10000, true, 600, epoch);
-    for (uint32_t n = 12500; n <= 30000; n += 2500) {
-      c.sample(23, 35, n);
-      c.tick(n, true, 600, epoch);
-    }
-    assert(c.faults & HeaterTimeout);
-    allOff(c);
-    tests++;
-  }
-  {
-    auto c = ready();
-    c.sample(27, 35, 10000);
-    c.tick(10000, true, 600, epoch);
-    for (uint32_t n = 12500; n <= 40000; n += 2500) {
-      c.sample(27, 35, n);
-      c.tick(n, true, 600, epoch);
-    }
-    assert(c.faults & HumidifierTimeout);
-    allOff(c);
     tests++;
   }
   {
@@ -185,57 +298,28 @@ int main() {
   {
     auto c = ready();
     c.tick(10000, true, 479, epoch);
-    assert(!c.scheduleState.day && !c.scheduleState.lights[0]);
-    c.tick(10000, true, 480, epoch);
-    assert(c.scheduleState.day && c.scheduleState.lights[0]);
+    assert(!c.scheduleState.day && !c.scheduleState.lamp);
+    c.tick(10000, true, 540, epoch);
+    assert(c.scheduleState.day && c.scheduleState.lamp);
     tests++;
   }
   {
+    // A restored forced mode waits for sensor recovery after reboot.
     auto c = ready();
-    c.sample(27, 55, 10000);
-    assert(c.overrideLight(0, 0, 10000));
-    c.tick(10000, true, 600, epoch);
-    assert(!c.outputs[2]);
-    c.sample(27, 55, 70000);
-    c.tick(70000, true, 600, epoch + 60);
-    assert(!c.outputs[2] && c.overrides[0].mode == 0);
-    assert(c.overrideLight(0, -1, 70000));
-    c.tick(70000, true, 600, epoch + 60);
-    assert(c.outputs[2]);
-    tests++;
-  }
-  {
-    auto c = ready();
-    assert(c.overrideLight(0, 0, 10000));
-    c.sample(27, 55, 70000);
-    c.tick(70000, true, 600, epoch - 10);
-    assert(c.overrides[0].mode == 0);
-    tests++;
-  }
-  {
-    auto c = ready();
-    assert(c.overrideLight(0, 1, 10000));
-    assert(!c.overrideLight(3, 1, 10000));
-    assert(!c.overrideLight(0, 8, 10000));
-    tests++;
-  }
-  {
-    auto c = ready();
-    assert(c.overrideLight(0, 1, 10000));
+    assert(c.setMode(Lamp, ModeOn, 10000));
     Controller reboot;
     reboot.begin(0);
     reboot.apply(c.config, 0);
-    c.updateSchedule(true, 600);
+    c.updateSchedule(true, 1300);
     reboot.scheduleState = c.scheduleState;
-    reboot.overrides[0] = c.overrides[0];
-    reboot.faults = c.faults;
+    reboot.overrides[Lamp] = c.overrides[Lamp];
     reboot.tick(0, false, 0, 0);
-    allOff(reboot); // Sensor recovery must precede restored commands.
+    allOff(reboot);
     reboot.sample(27, 55, 2500);
     reboot.sample(27, 55, 5000);
     reboot.sample(27, 55, 10000);
     reboot.tick(10000, false, 0, 0);
-    assert(reboot.outputs[2] && reboot.overrides[0].mode == 1);
+    assert(reboot.outputs[Lamp] && reboot.overrides[Lamp].mode == ModeOn);
     tests++;
   }
   {
@@ -252,13 +336,13 @@ int main() {
   }
   {
     auto c = example();
-    c.day_temp_on = c.day_temp_off;
+    c.day_rh_on = c.day_rh_off;
     assert(!valid(c));
     c = example();
-    c.max_temperature = 25;
+    c.max_temperature = 81;
     assert(!valid(c));
     c = example();
-    c.light1_off = c.light1_on;
+    c.lamp_off = c.lamp_on;
     assert(!valid(c));
     c = example();
     c.day_rh_on = NAN;
@@ -266,9 +350,23 @@ int main() {
     c = example();
     c.min_off_seconds = 0;
     assert(!valid(c));
+    c = example();
+    c.fan_night_on_minutes = 0;
+    c.fan_night_off_minutes = 0;
+    assert(!valid(c));
+    c = example();
+    c.fan_day_on_minutes = -1;
+    assert(!valid(c));
+    c = example();
+    c.fan_day_off_minutes = 1441;
+    assert(!valid(c));
+    c = example();
+    c.fan_day_on_minutes = 0;
+    assert(valid(c));
     tests++;
   }
   {
+    // millis() wrap-around.
     Controller c;
     c.begin(UINT32_MAX - 5000);
     c.apply(example(), UINT32_MAX - 5000);
@@ -276,49 +374,33 @@ int main() {
     c.sample(23, 35, 2500);
     c.sample(23, 35, 5000);
     c.tick(5000, true, 600, epoch);
-    assert(c.outputs[0]);
+    assert(c.outputs[Humidifier] && c.outputs[Fan]);
     tests++;
   }
   {
+    // Clock loss keeps the saved profile; the fan keeps cycling on uptime.
     auto c = ready();
     c.tick(10000, true, 600, epoch);
-    c.sample(23, 35, 12500);
-    c.tick(12500, false, 0, 0);
-    assert(c.outputs[0] && c.outputs[1] && c.outputs[2] && c.isDay);
+    run(c, 12500, false, 0, 23, 35);
+    assert(c.outputs[Lamp] && c.outputs[Fan] && c.outputs[Humidifier] && c.isDay);
+    run(c, 15000, false, 0);
     assert(std::string(c.reason) == "running saved state");
+    run(c, 10000 + 11 * minute, false, 0);
+    assert(!c.outputs[Fan]);
     tests++;
   }
   {
-    auto c = ready();
-    c.tick(10000, true, 1300, epoch);
-    c.tick(10000, false, 0, 0);
-    assert(!c.isDay && !c.outputs[2] && c.outputs[3]);
-    c.tick(10000, true, 600, epoch);
-    assert(c.isDay && c.outputs[2] && !c.outputs[3]);
-    tests++;
-  }
-  {
+    // Config changes preserve selected modes.
     auto c = ready();
     c.tick(10000, true, 600, epoch);
-    assert(c.overrideLight(1, 1, 10000));
+    assert(c.setMode(Lamp, ModeOff, 10000));
     auto cfg = c.config;
     cfg.day_rh_on = 39;
     assert(c.apply(cfg, 10000));
     c.tick(10000, false, 0, 0);
-    assert(c.overrides[1].mode == 1 && c.outputs[3]);
+    assert(c.overrides[Lamp].mode == ModeOff && !c.outputs[Lamp] && c.outputs[Fan]);
     c.sample(NAN, NAN, 12500);
     c.tick(12500, false, 0, 0);
-    allOff(c);
-    tests++;
-  }
-  {
-    auto c = ready();
-    c.tick(10000, true, 600, epoch);
-    for (uint32_t n = 12500; n <= 30000; n += 2500) {
-      c.sample(23, 35, n);
-      c.tick(n, false, 0, 0);
-    }
-    assert(c.faults & HeaterTimeout);
     allOff(c);
     tests++;
   }

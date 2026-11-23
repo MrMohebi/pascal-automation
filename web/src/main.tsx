@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { Configuration, NumericKey, Point, Status } from "./types";
+import type { Configuration, Device, NumericKey, Point, Status } from "./types";
 import "./style.css";
 
 async function api(path: string, method = "GET", body?: unknown, csrf = "") {
@@ -34,6 +34,49 @@ const date = (epoch: number, withDate = false) =>
   });
 const minuteText = (n: number) =>
   `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+const durationText = (seconds: number) =>
+  seconds < 90
+    ? `${Math.max(1, Math.round(seconds))} s`
+    : seconds < 5400
+      ? `${Math.round(seconds / 60)} min`
+      : `${Math.floor(seconds / 3600)} h ${Math.round((seconds % 3600) / 60)} min`;
+
+// Same order as the firmware's relay outputs (GPIO 25, 26, 27).
+const OUTPUTS = [
+  { name: "Lamp", symbol: "☀", pin: 25 },
+  { name: "Fan", symbol: "✣", pin: 26 },
+  { name: "Humidifier", symbol: "◉", pin: 27 },
+] as const;
+const MODES = [
+  [-1, "Auto"],
+  [1, "On"],
+  [0, "Off"],
+] as const;
+const modeName = (mode: number | undefined) =>
+  mode === 1 ? "Forced ON" : mode === 0 ? "Forced OFF" : "Auto";
+const running = (d: Device) =>
+  d.reason === "running" || d.reason === "running saved state";
+
+function autoDescription(d: Device, i: number) {
+  const c = d.config;
+  if (!c) return "Setup required";
+  const period = d.profile === "night" ? "night" : "day";
+  if (i === 0)
+    return !d.clock_ok && d.schedule_cached
+      ? "Holding saved automatic state"
+      : `Schedule ${minuteText(c.lamp_on)}–${minuteText(c.lamp_off)}`;
+  if (i === 1) {
+    const on = c[`fan_${period}_on_minutes`],
+      off = c[`fan_${period}_off_minutes`];
+    if (d.profile === "unknown") return "Waiting for day/night profile";
+    if (on === 0) return `Off all ${period}`;
+    if (off === 0) return `Runs all ${period}`;
+    return `${period === "day" ? "Day" : "Night"} cycle ${on} min on / ${off} min off`;
+  }
+  return d.profile === "unknown"
+    ? "Humidity controlled"
+    : `ON below ${c[`${period}_rh_on`]}% · OFF at ${c[`${period}_rh_off`]}%`;
+}
 function Logo() {
   return (
     <div className="logo">
@@ -57,9 +100,8 @@ function Chart({
   bucket: number;
 }) {
   const [hover, setHover] = useState<Point | null>(null);
-  const values = points
-    .filter((p) => p.sensor_ok && p[metric] !== null)
-    .map((p) => p[metric] as number);
+  const valid = points.filter((p) => p.sensor_ok && p[metric] !== null);
+  const values = valid.map((p) => p[metric] as number);
   if (!values.length)
     return (
       <div className="chart-empty">
@@ -98,16 +140,21 @@ function Chart({
         viewBox="0 0 750 195"
         role="img"
         aria-label={`${metric} history in Tehran time`}
-        onMouseLeave={() => setHover(null)}
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
+        onPointerLeave={() => setHover(null)}
+        onPointerMove={(e) => {
+          // Map through the SVG transform: the drawing is letterboxed when
+          // max-height limits it, so the element box is not the plot area.
+          const matrix = e.currentTarget.getScreenCTM();
+          if (!matrix) return;
+          const point = new DOMPoint(e.clientX, e.clientY).matrixTransform(
+            matrix.inverse(),
+          );
           const t =
-            start +
-            ((((e.clientX - rect.left) / rect.width) * 750 - 45) / 680) *
-              (end - start);
+            start + ((point.x - 45) / 680) * Math.max(end - start, 1);
+          // Snap to the nearest valid reading so the caption never shows a gap.
           setHover(
-            points.reduce((a, b) =>
-              Math.abs(a.time - t) < Math.abs(b.time - t) ? a : b,
+            valid.reduce((a, b) =>
+              Math.abs(a.time - t) <= Math.abs(b.time - t) ? a : b,
             ),
           );
         }}
@@ -151,13 +198,21 @@ function Chart({
           {date(end, true)}
         </text>
         {hover && (
-          <line
-            x1={x(hover.time)}
-            x2={x(hover.time)}
-            y1="20"
-            y2="165"
-            className="hover-line"
-          />
+          <>
+            <line
+              x1={x(hover.time)}
+              x2={x(hover.time)}
+              y1="20"
+              y2="165"
+              className="hover-line"
+            />
+            <circle
+              cx={x(hover.time)}
+              cy={y(hover[metric] as number)}
+              r="4.5"
+              className="hover-dot"
+            />
+          </>
         )}
       </svg>
     </div>
@@ -176,19 +231,29 @@ const sections: { title: string; description: string; fields: Field[] }[] = [
     ],
   },
   {
-    title: "Temperature",
-    description: "Heater turns on below ON and off at OFF. Values are °C.",
+    title: "Lamp",
+    description:
+      "Daily lamp schedule (GPIO 25). Overnight periods are supported. A forced ON/OFF from the overview stays selected until you choose Auto.",
     fields: [
-      ["day_temp_on", "Day · ON below", "number"],
-      ["day_temp_off", "Day · OFF at", "number"],
-      ["night_temp_on", "Night · ON below", "number"],
-      ["night_temp_off", "Night · OFF at", "number"],
+      ["lamp_on", "Lamp · ON", "time"],
+      ["lamp_off", "Lamp · OFF", "time"],
+    ],
+  },
+  {
+    title: "Exhaust fan",
+    description:
+      "Repeating cycle (GPIO 26): runs for ON minutes, then rests for OFF minutes. Each day/night change restarts the cycle with ON. Set ON to 0 to keep the fan off, or OFF to 0 to run it continuously.",
+    fields: [
+      ["fan_day_on_minutes", "Day · ON for", "number", "minutes"],
+      ["fan_day_off_minutes", "Day · then OFF for", "number", "minutes"],
+      ["fan_night_on_minutes", "Night · ON for", "number", "minutes"],
+      ["fan_night_off_minutes", "Night · then OFF for", "number", "minutes"],
     ],
   },
   {
     title: "Humidity",
     description:
-      "Humidifier turns on below ON and off at OFF. Values are % RH.",
+      "Humidifier (GPIO 27) turns on below ON and off at OFF. Values are % RH.",
     fields: [
       ["day_rh_on", "Day · ON below", "number"],
       ["day_rh_off", "Day · OFF at", "number"],
@@ -197,24 +262,12 @@ const sections: { title: string; description: string; fields: Field[] }[] = [
     ],
   },
   {
-    title: "Lighting",
-    description:
-      "Two separate daily schedules. Saved manual ON/OFF stays selected until you change it or choose Auto.",
-    fields: [
-      ["light1_on", "Light 1 · ON", "time"],
-      ["light1_off", "Light 1 · OFF", "time"],
-      ["light2_on", "Light 2 · ON", "time"],
-      ["light2_off", "Light 2 · OFF", "time"],
-    ],
-  },
-  {
     title: "Safety limits",
     description:
-      "Required before automation can run. Runtime limits latch a fault until acknowledged.",
+      "Required before automation can run. Reaching the maximum temperature or humidifier runtime switches every output OFF until acknowledged.",
     fields: [
       ["max_temperature", "Maximum temperature", "number", "°C"],
-      ["min_off_seconds", "Minimum OFF time", "number", "seconds"],
-      ["heater_max_seconds", "Maximum heater run", "number", "seconds"],
+      ["min_off_seconds", "Humidifier minimum OFF time", "number", "seconds"],
       ["humidifier_max_seconds", "Maximum humidifier run", "number", "seconds"],
     ],
   },
@@ -322,11 +375,13 @@ function SettingsForm({
                     type={kind}
                     step={
                       kind === "number"
-                        ? key.includes("seconds")
+                        ? key.includes("seconds") || key.includes("minutes")
                           ? "1"
                           : "0.1"
                         : undefined
                     }
+                    min={key.includes("minutes") ? 0 : undefined}
+                    max={key.includes("minutes") ? 1440 : undefined}
                     value={draft[key] ?? ""}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -630,9 +685,9 @@ function App() {
                   <span className="dot warm" />
                   {fresh ? "Ambient temperature" : "Awaiting fresh sensor data"}
                   <span>
-                    {d?.config && d.profile !== "unknown"
-                      ? `${d.config[`${d.profile}_temp_on` as keyof Configuration]}–${d.config[`${d.profile}_temp_off` as keyof Configuration]} °C`
-                      : "No target set"}
+                    {d?.config
+                      ? `Max ${d.config.max_temperature} °C`
+                      : "No limit set"}
                   </span>
                 </div>
               </section>
@@ -655,7 +710,7 @@ function App() {
             </div>
             <div className="section-title">
               <div>
-                <span className="eyebrow">FOUR CHANNELS · ONE HABITAT</span>
+                <span className="eyebrow">THREE CHANNELS · ONE HABITAT</span>
                 <h2>Equipment</h2>
               </div>
               <span className="muted">
@@ -663,49 +718,69 @@ function App() {
               </span>
             </div>
             <div className="equipment">
-              {["Heater", "Humidifier", "Light 1", "Light 2"].map((name, i) => (
-                <section className="panel equipment-card" key={name}>
-                  <div className="equipment-top">
-                    <span className="equipment-symbol">
-                      {["☀", "◉", "◐", "◑"][i]}
+              {OUTPUTS.map(({ name, symbol, pin }, i) => {
+                const mode = d?.overrides[i]?.mode;
+                const state = d?.outputs[i];
+                const forceOnBlocked =
+                  !d?.config ||
+                  !d.config.enabled ||
+                  !!d.faults.length ||
+                  !d.sensor_ok;
+                const detail = !d
+                  ? "Awaiting device"
+                  : !d.config
+                    ? "Setup required"
+                    : !running(d)
+                      ? `Held OFF · ${d.reason}`
+                      : mode === -1
+                        ? autoDescription(d, i)
+                        : `${modeName(mode)} · saved on device`;
+                const next =
+                  d && i === 1 && mode === -1 && running(d) && d.fan_next_change_s != null && online
+                    ? `Turns ${state ? "OFF" : "ON"} in ${durationText(Math.max(0, d.fan_next_change_s - (age ?? 0)))}`
+                    : null;
+                return (
+                  <section className="panel equipment-card" key={name}>
+                    <div className="equipment-top">
+                      <span className="equipment-symbol" aria-hidden="true">
+                        {symbol}
+                      </span>
+                      <span
+                        className={`pill ${online && state ? "on" : "off"}`}
+                        aria-label={`${name} is ${!d ? "unknown" : state ? "on" : "off"}`}
+                      >
+                        <i />
+                        {!d
+                          ? "UNKNOWN"
+                          : `${state ? "ON" : "OFF"}${online ? "" : " · LAST"}`}
+                      </span>
+                    </div>
+                    <h3>{name}</h3>
+                    <span className="mode-line">
+                      Mode <b>{d ? modeName(mode) : "—"}</b> · GPIO {pin}
                     </span>
-                    <span
-                      className={`pill ${online && d?.outputs[i] ? "on" : "off"}`}
-                    >
-                      {!d
-                        ? "UNKNOWN"
-                        : `${d.outputs[i] ? "ON" : "OFF"}${online ? "" : " · LAST"}`}
-                    </span>
-                  </div>
-                  <h3>{name}</h3>
-                  <p>
-                    {i < 2
-                      ? (d?.reason ?? "Awaiting device")
-                      : d?.overrides[i - 2]?.mode === -1
-                        ? (!d.clock_ok && d.schedule_cached ? "Holding saved automatic state" : "Following daily schedule")
-                        : d
-                          ? (d.light_modes_persistent ? "Saved manual mode · survives restart" : `Override until ${date(d.overrides[i - 2].until)}`)
-                          : "No schedule yet"}
-                  </p>
-                  {i >= 2 ? (
-                    <div className="segmented">
-                      {[
-                        [-1, "Auto"],
-                        [1, "On"],
-                        [0, "Off"],
-                      ].map(([mode, label]) => (
+                    <p>
+                      {detail}
+                      {next && <span className="next-change">{next}</span>}
+                    </p>
+                    <div className="segmented" role="group" aria-label={`${name} mode`}>
+                      {MODES.map(([value, label]) => (
                         <button
-                          key={mode}
-                          disabled={blocked}
-                          className={
-                            d?.overrides[i - 2]?.mode === mode ? "selected" : ""
+                          key={value}
+                          disabled={blocked || !d?.config || (value === 1 && forceOnBlocked)}
+                          title={
+                            value === 1 && forceOnBlocked
+                              ? "Forcing ON needs automation enabled, no faults, and a working sensor"
+                              : undefined
                           }
+                          className={mode === value ? "selected" : ""}
                           aria-label={`${name} ${label}`}
+                          aria-pressed={mode === value}
                           onClick={() =>
                             submit("/overrides", "POST", {
                               ...version,
-                              light: i - 2,
-                              mode,
+                              output: i,
+                              mode: value,
                             })
                           }
                         >
@@ -713,11 +788,9 @@ function App() {
                         </button>
                       ))}
                     </div>
-                  ) : (
-                    <small>Threshold-controlled</small>
-                  )}
-                </section>
-              ))}
+                  </section>
+                );
+              })}
             </div>
             <section className="panel history">
               <div className="section-title">
@@ -822,7 +895,7 @@ function App() {
                             {c.kind === "config"
                               ? "Settings"
                               : c.kind === "override"
-                                ? "Light override"
+                                ? "Equipment mode"
                                 : "Fault acknowledgment"}
                           </strong>
                           <small>
@@ -837,8 +910,8 @@ function App() {
                   </ul>
                 ) : (
                   <p className="muted">
-                    Settings and lighting changes will appear here with device
-                    acknowledgments.
+                    Settings and equipment mode changes will appear here with
+                    device acknowledgments.
                   </p>
                 )}
               </section>

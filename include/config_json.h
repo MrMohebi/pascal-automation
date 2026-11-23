@@ -2,13 +2,12 @@
 #include "control.h"
 #include <ArduinoJson.h>
 #define CONFIG_FLOATS(X)                                                                           \
-  X(day_temp_on)                                                                                   \
-  X(day_temp_off) X(night_temp_on) X(night_temp_off) X(day_rh_on) X(day_rh_off) X(night_rh_on)     \
-      X(night_rh_off) X(max_temperature)
+  X(day_rh_on) X(day_rh_off) X(night_rh_on) X(night_rh_off) X(max_temperature)
 #define CONFIG_INTS(X)                                                                             \
   X(day_start)                                                                                     \
-  X(day_end) X(light1_on) X(light1_off) X(light2_on) X(light2_off) X(min_off_seconds)              \
-      X(heater_max_seconds) X(humidifier_max_seconds)
+  X(day_end) X(lamp_on) X(lamp_off) X(fan_day_on_minutes) X(fan_day_off_minutes)                   \
+      X(fan_night_on_minutes) X(fan_night_off_minutes) X(min_off_seconds)                          \
+          X(humidifier_max_seconds)
 inline void writeConfig(JsonObject o, const pascal::Config &c) {
   o["enabled"] = c.enabled;
 #define WRITE_FIELD(f) o[#f] = c.f;
@@ -31,5 +30,35 @@ inline bool readConfig(JsonVariantConst o, pascal::Config &c) {
   CONFIG_INTS(READ_INT)
 #undef READ_FLOAT
 #undef READ_INT
-      return pascal::valid(c);
+  return pascal::valid(c);
+}
+// Layout v3 settings (heater, humidifier, two lights). The heater thresholds are
+// dropped, light 1 becomes the lamp, and the new fan starts on a 10/40 minute cycle.
+inline bool readLegacyConfig(JsonVariantConst o, pascal::Config &c) {
+  if (!o.is<JsonObjectConst>() || !o["enabled"].is<bool>())
+    return false;
+  for (const char *f : {"day_rh_on", "day_rh_off", "night_rh_on", "night_rh_off",
+                        "max_temperature"})
+    if (!o[f].is<double>())
+      return false;
+  for (const char *f :
+       {"day_start", "day_end", "light1_on", "light1_off", "min_off_seconds",
+        "humidifier_max_seconds"})
+    if (!o[f].is<int>())
+      return false;
+  c.enabled = o["enabled"].as<bool>();
+  c.day_rh_on = o["day_rh_on"].as<double>();
+  c.day_rh_off = o["day_rh_off"].as<double>();
+  c.night_rh_on = o["night_rh_on"].as<double>();
+  c.night_rh_off = o["night_rh_off"].as<double>();
+  c.max_temperature = o["max_temperature"].as<double>();
+  c.day_start = o["day_start"].as<int>();
+  c.day_end = o["day_end"].as<int>();
+  c.lamp_on = o["light1_on"].as<int>();
+  c.lamp_off = o["light1_off"].as<int>();
+  c.fan_day_on_minutes = c.fan_night_on_minutes = 10;
+  c.fan_day_off_minutes = c.fan_night_off_minutes = 40;
+  c.min_off_seconds = o["min_off_seconds"].as<int>();
+  c.humidifier_max_seconds = o["humidifier_max_seconds"].as<int>();
+  return pascal::valid(c);
 }

@@ -1,9 +1,5 @@
 export type Configuration = {
   enabled: boolean;
-  day_temp_on: number;
-  day_temp_off: number;
-  night_temp_on: number;
-  night_temp_off: number;
   day_rh_on: number;
   day_rh_off: number;
   night_rh_on: number;
@@ -11,12 +7,13 @@ export type Configuration = {
   max_temperature: number;
   day_start: number;
   day_end: number;
-  light1_on: number;
-  light1_off: number;
-  light2_on: number;
-  light2_off: number;
+  lamp_on: number;
+  lamp_off: number;
+  fan_day_on_minutes: number;
+  fan_day_off_minutes: number;
+  fan_night_on_minutes: number;
+  fan_night_off_minutes: number;
   min_off_seconds: number;
-  heater_max_seconds: number;
   humidifier_max_seconds: number;
 };
 export type NumericKey = Exclude<keyof Configuration, "enabled">;
@@ -30,13 +27,15 @@ export type Device = {
   sensor_ok: boolean;
   clock_ok: boolean;
   schedule_cached?: boolean;
-  light_modes_persistent?: boolean;
+  modes_persistent?: boolean;
   simulated: boolean;
   profile: string;
   reason: string;
   outputs: boolean[];
   faults: string[];
+  // Same order as outputs: lamp, fan, humidifier. -1 Auto, 0 forced OFF, 1 forced ON.
   overrides: { mode: number; until: number }[];
+  fan_next_change_s?: number | null;
   display_ok: boolean;
   storage_ok: boolean;
   wifi_rssi: number;

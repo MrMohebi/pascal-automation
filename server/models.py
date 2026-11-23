@@ -9,41 +9,40 @@ class Model(BaseModel):
 
 class Configuration(Model):
     enabled: bool = Field(strict=True)
-    day_temp_on: float = Field(ge=-40, le=80)
-    day_temp_off: float = Field(ge=-40, le=80)
-    night_temp_on: float = Field(ge=-40, le=80)
-    night_temp_off: float = Field(ge=-40, le=80)
     day_rh_on: float = Field(ge=0, le=100)
     day_rh_off: float = Field(ge=0, le=100)
     night_rh_on: float = Field(ge=0, le=100)
     night_rh_off: float = Field(ge=0, le=100)
-    max_temperature: float = Field(ge=-40, le=80)
+    max_temperature: float = Field(gt=-40, le=80)
     day_start: int = Field(ge=0, lt=1440, strict=True)
     day_end: int = Field(ge=0, lt=1440, strict=True)
-    light1_on: int = Field(ge=0, lt=1440, strict=True)
-    light1_off: int = Field(ge=0, lt=1440, strict=True)
-    light2_on: int = Field(ge=0, lt=1440, strict=True)
-    light2_off: int = Field(ge=0, lt=1440, strict=True)
+    lamp_on: int = Field(ge=0, lt=1440, strict=True)
+    lamp_off: int = Field(ge=0, lt=1440, strict=True)
+    fan_day_on_minutes: int = Field(ge=0, le=1440, strict=True)
+    fan_day_off_minutes: int = Field(ge=0, le=1440, strict=True)
+    fan_night_on_minutes: int = Field(ge=0, le=1440, strict=True)
+    fan_night_off_minutes: int = Field(ge=0, le=1440, strict=True)
     min_off_seconds: int = Field(ge=1, le=3600, strict=True)
-    heater_max_seconds: int = Field(ge=1, le=86400, strict=True)
     humidifier_max_seconds: int = Field(ge=1, le=86400, strict=True)
 
     @model_validator(mode="after")
     def validate_relationships(self):
-        for prefix in ("day_temp", "night_temp", "day_rh", "night_rh"):
+        for prefix in ("day_rh", "night_rh"):
             if getattr(self, prefix + "_on") >= getattr(self, prefix + "_off"):
                 raise ValueError(f"{prefix}: ON threshold must be below OFF threshold")
-        if self.max_temperature <= max(self.day_temp_off, self.night_temp_off):
-            raise ValueError(
-                "Maximum temperature must exceed both temperature OFF thresholds"
-            )
         for start, end in (
             (self.day_start, self.day_end),
-            (self.light1_on, self.light1_off),
-            (self.light2_on, self.light2_off),
+            (self.lamp_on, self.lamp_off),
         ):
             if start == end:
                 raise ValueError("Schedule ON/start and OFF/end times must differ")
+        for period in ("day", "night"):
+            if (
+                getattr(self, f"fan_{period}_on_minutes")
+                + getattr(self, f"fan_{period}_off_minutes")
+                == 0
+            ):
+                raise ValueError(f"Fan {period} cycle needs an ON or OFF duration")
         return self
 
 
@@ -70,20 +69,19 @@ class Telemetry(Model):
     sensor_ok: bool
     clock_ok: bool
     schedule_cached: bool = False
-    light_modes_persistent: bool = False
+    modes_persistent: bool = False
     simulated: bool
     profile: Literal["day", "night", "unknown"]
     reason: str = Field(max_length=100)
     wifi_rssi: int = Field(ge=-150, le=0)
     display_ok: bool
     storage_ok: bool
-    outputs: list[bool] = Field(min_length=4, max_length=4)
+    outputs: list[bool] = Field(min_length=3, max_length=3)
     faults: list[
-        Literal[
-            "overtemperature", "heater_runtime", "humidifier_runtime", "storage_failure"
-        ]
-    ] = Field(max_length=4)
-    overrides: list[OverrideState] = Field(min_length=2, max_length=2)
+        Literal["overtemperature", "humidifier_runtime", "storage_failure"]
+    ] = Field(max_length=3)
+    overrides: list[OverrideState] = Field(min_length=3, max_length=3)
+    fan_next_change_s: int | None = Field(default=None, ge=0, le=172800)
     result: CommandResult | None = None
 
     @model_validator(mode="after")
@@ -114,5 +112,6 @@ class ConfigChange(Versioned):
 
 
 class OverrideChange(Versioned):
-    light: Literal[0, 1]
+    # Firmware output order: 0 lamp, 1 exhaust fan, 2 humidifier.
+    output: Literal[0, 1, 2]
     mode: Literal[-1, 0, 1]

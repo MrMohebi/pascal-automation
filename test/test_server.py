@@ -46,10 +46,6 @@ def configuration():
     # Synthetic test data only; never installed as default care settings.
     return dict(
         enabled=True,
-        day_temp_on=24,
-        day_temp_off=26,
-        night_temp_on=18,
-        night_temp_off=20,
         day_rh_on=40,
         day_rh_off=50,
         night_rh_on=60,
@@ -57,12 +53,13 @@ def configuration():
         max_temperature=32,
         day_start=480,
         day_end=1200,
-        light1_on=480,
-        light1_off=1200,
-        light2_on=540,
-        light2_off=1140,
+        lamp_on=540,
+        lamp_off=1140,
+        fan_day_on_minutes=10,
+        fan_day_off_minutes=40,
+        fan_night_on_minutes=5,
+        fan_night_off_minutes=55,
         min_off_seconds=60,
-        heater_max_seconds=600,
         humidifier_max_seconds=120,
     )
 
@@ -80,16 +77,17 @@ def telemetry():
         sensor_ok=True,
         clock_ok=True,
         schedule_cached=False,
-        light_modes_persistent=True,
+        modes_persistent=True,
         simulated=True,
         profile="unknown",
         reason="unconfigured",
         wifi_rssi=-50,
         display_ok=True,
         storage_ok=True,
-        outputs=[False] * 4,
+        outputs=[False] * 3,
         faults=[],
-        overrides=[dict(mode=-1, until=0)] * 2,
+        overrides=[dict(mode=-1, until=0)] * 3,
+        fan_next_change_s=None,
     )
 
 
@@ -255,13 +253,16 @@ def test_wrong_configuration_not_acknowledged(rig):
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("day_temp_on", 27),
-        ("max_temperature", 25),
+        ("day_rh_on", 55),
+        ("max_temperature", 81),
         ("min_off_seconds", 0),
         ("day_rh_off", 101),
-        ("light1_off", 480),
+        ("lamp_off", 540),
         ("day_start", 1440),
-        ("heater_max_seconds", 1.5),
+        ("humidifier_max_seconds", 1.5),
+        ("fan_day_on_minutes", -1),
+        ("fan_night_off_minutes", 1441),
+        ("fan_day_on_minutes", 2.5),
     ],
 )
 def test_invalid_configuration(rig, field, value):
@@ -282,7 +283,7 @@ def test_override_interlocks_and_ack(rig):
     client, _ = rig
     data = telemetry()
     sync(rig, data)
-    body = {"base_revision": 0, "boot_id": "test-boot", "light": 0, "mode": 1}
+    body = {"base_revision": 0, "boot_id": "test-boot", "output": 0, "mode": 1}
     assert client.post("/api/overrides", json=body).status_code == 409
     data.update(config=configuration(), profile="day")
     sync(rig, data)
@@ -373,7 +374,7 @@ def test_saved_schedule_alert_after_offline_restart(rig):
         schedule_cached=True,
         profile="night",
         reason="running saved state",
-        outputs=[False, True, False, True],
+        outputs=[False, True, False],
     )
     assert sync(rig, data).status_code == 200
     status = client.get("/api/status").json()
@@ -388,8 +389,9 @@ def test_saved_schedule_alert_after_offline_restart(rig):
     "reported_revision,reported_mode,expected",
     [(1, 1, "applied"), (0, 1, "rejected"), (1, 0, "rejected")],
 )
-def test_persistent_light_requires_saved_revision_and_matching_mode(
-    rig, reported_revision, reported_mode, expected
+@pytest.mark.parametrize("output", [0, 1, 2])
+def test_persistent_mode_requires_saved_revision_and_matching_mode(
+    rig, reported_revision, reported_mode, expected, output
 ):
     client, _ = rig
     data = telemetry()
@@ -397,12 +399,14 @@ def test_persistent_light_requires_saved_revision_and_matching_mode(
     sync(rig, data)
     response = client.post(
         "/api/overrides",
-        json={"base_revision": 0, "boot_id": "test-boot", "light": 0, "mode": 1},
+        json={"base_revision": 0, "boot_id": "test-boot", "output": output, "mode": 1},
     )
     assert response.status_code == 200
+    overrides = [dict(mode=-1, until=0) for _ in range(3)]
+    overrides[output] = dict(mode=reported_mode, until=0)
     data.update(
         revision=reported_revision,
-        overrides=[dict(mode=reported_mode, until=0), dict(mode=-1, until=0)],
+        overrides=overrides,
         result=dict(id=response.json()["id"], status="applied", message="Saved"),
     )
     assert sync(rig, data).status_code == 200
@@ -411,5 +415,46 @@ def test_persistent_light_requires_saved_revision_and_matching_mode(
         data.update(boot_id="new-boot", clock_ok=False, result=None)
         assert sync(rig, data).status_code == 200
         restored = client.get("/api/status").json()["device"]
-        assert restored["overrides"][0]["mode"] == 1
+        assert restored["overrides"][output]["mode"] == 1
         assert restored["revision"] == 1
+
+
+def test_off_and_auto_allowed_during_faults_but_forced_on_blocked(rig):
+    client, _ = rig
+    data = telemetry()
+    data.update(config=configuration(), profile="day", faults=["overtemperature"])
+    sync(rig, data)
+    base = {"base_revision": 0, "boot_id": "test-boot"}
+    for output in (0, 1, 2):
+        assert (
+            client.post(
+                "/api/overrides", json={**base, "output": output, "mode": 1}
+            ).status_code
+            == 409
+        )
+    assert (
+        client.post("/api/overrides", json={**base, "output": 1, "mode": 0}).status_code
+        == 200
+    )
+    assert (
+        client.post("/api/overrides", json={**base, "output": 3, "mode": 0}).status_code
+        == 422
+    )
+    assert sync(rig, data).json()["command"]["payload"] == {"output": 1, "mode": 0}
+
+
+def test_fan_cycle_requires_some_duration(rig):
+    client, _ = rig
+    sync(rig)
+    c = configuration()
+    c.update(fan_night_on_minutes=0, fan_night_off_minutes=0)
+    body = {"base_revision": 0, "boot_id": "test-boot", "config": c}
+    assert client.put("/api/config", json=body).status_code == 422
+    c.update(fan_night_on_minutes=0, fan_night_off_minutes=60)
+    assert client.put("/api/config", json=body).status_code == 200
+
+
+def test_old_four_channel_telemetry_is_rejected(rig):
+    data = telemetry()
+    data.update(outputs=[False] * 4, overrides=[dict(mode=-1, until=0)] * 2)
+    assert sync(rig, data).status_code == 422

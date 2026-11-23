@@ -12,23 +12,28 @@
 #error "PASCAL_RELAY_ACTIVE_LOW must be 0 or 1."
 #endif
 #if !defined(PASCAL_HARDWARE_COMMISSIONED) || PASCAL_HARDWARE_COMMISSIONED != 1
-#error "Physical commissioning and independent heater protection must be verified first."
+#error "Physical relay commissioning must be verified first."
 #endif
 #endif
 namespace outputs {
 constexpr bool simulated = !PASCAL_ENABLE_RELAYS;
 constexpr auto pins = boardpins::relays;
+constexpr int count = int(pins.size());
 inline void begin() {
 #if PASCAL_ENABLE_RELAYS
   for (int pin : pins) {
     digitalWrite(pin, PASCAL_RELAY_ACTIVE_LOW ? HIGH : LOW);
     pinMode(pin, OUTPUT);
   }
+  for (int pin : boardpins::unusedRelays) {
+    digitalWrite(pin, PASCAL_RELAY_ACTIVE_LOW ? HIGH : LOW);
+    pinMode(pin, OUTPUT);
+  }
 #endif
 }
-inline void write(const bool states[4]) {
+inline void write(const bool states[count]) {
 #if PASCAL_ENABLE_RELAYS
-  for (int i = 0; i < 4; i++)
+  for (int i = 0; i < count; i++)
     digitalWrite(pins[i], states[i] ? (PASCAL_RELAY_ACTIVE_LOW ? LOW : HIGH)
                                     : (PASCAL_RELAY_ACTIVE_LOW ? HIGH : LOW));
 #else

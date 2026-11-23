@@ -330,7 +330,7 @@ nav > span {
 }
 .equipment {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 .equipment-card {
@@ -352,6 +352,21 @@ nav > span {
   font-size: 11px;
   margin: 7px 0 18px;
   min-height: 17px;
+}
+.equipment-card .mode-line {
+  font-size: 11px;
+  color: #84907f;
+  margin-top: 4px;
+}
+.equipment-card .mode-line b {
+  color: #365740;
+  font-weight: 650;
+}
+.equipment-card .next-change {
+  display: block;
+  margin-top: 4px;
+  color: #4c704c;
+  font-weight: 600;
 }
 .equipment-card small {
   margin-top: auto;
@@ -438,6 +453,20 @@ nav > span {
   stroke: #536d59;
   stroke-width: 1;
   stroke-dasharray: 4;
+  pointer-events: none;
+}
+.hover-dot {
+  fill: #fffefa;
+  stroke: #b98651;
+  stroke-width: 2;
+  pointer-events: none;
+}
+.humidity .hover-dot {
+  stroke: #6a9f98;
+}
+.chart svg {
+  touch-action: pan-y;
+  cursor: crosshair;
 }
 .chart-caption {
   text-align: right;
@@ -661,9 +690,6 @@ footer {
   .shell {
     padding: 0 28px;
   }
-  .equipment {
-    grid-template-columns: 1fr 1fr;
-  }
   .heading h1 {
     font-size: 33px;
   }
@@ -725,6 +751,7 @@ footer {
   }
   .equipment {
     gap: 10px;
+    grid-template-columns: 1fr;
   }
   .equipment-card {
     padding: 15px;

@@ -40,11 +40,12 @@ bool saveConfig(const pascal::Config &c, uint32_t base) {
   revision++;
   return true;
 }
-bool lightOverride(int light, int mode) {
+static_assert(outputs::count == pascal::outputCount, "Relay pins must match controller outputs");
+bool outputMode(int output, int mode) {
   if (!storageReady || revision == UINT32_MAX)
     return false;
   auto candidate = controller;
-  if (!candidate.overrideLight(light, mode, millis()))
+  if (!candidate.setMode(output, mode, millis()))
     return false;
   if (!storage.save(candidate, revision + 1)) {
     storageReady = false;
@@ -116,7 +117,7 @@ void snapshot(JsonDocument &d) {
   d["simulated"] = outputs::simulated;
   d["profile"] = controller.scheduleState.known ? (controller.isDay ? "day" : "night") : "unknown";
   d["schedule_cached"] = controller.scheduleState.known;
-  d["light_modes_persistent"] = true;
+  d["modes_persistent"] = true;
   d["reason"] = controller.reason;
   d["wifi_rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
   d["display_ok"] = ui.present;
@@ -125,11 +126,9 @@ void snapshot(JsonDocument &d) {
   for (bool state : controller.outputs)
     out.add(state);
   auto faults = d["faults"].to<JsonArray>();
-  if (controller.faults & 1)
+  if (controller.faults & pascal::Overheat)
     faults.add("overtemperature");
-  if (controller.faults & 2)
-    faults.add("heater_runtime");
-  if (controller.faults & 4)
+  if (controller.faults & pascal::HumidifierTimeout)
     faults.add("humidifier_runtime");
   if (!storageReady)
     faults.add("storage_failure");
@@ -139,6 +138,11 @@ void snapshot(JsonDocument &d) {
     obj["mode"] = o.mode;
     obj["until"] = 0; // No expiry: saved until explicitly changed.
   }
+  const int32_t fanRemaining = controller.fanCycleRemaining(now);
+  if (controller.configured && controller.scheduleState.known && fanRemaining >= 0)
+    d["fan_next_change_s"] = fanRemaining;
+  else
+    d["fan_next_change_s"] = nullptr;
   if (lastCommandId.length()) {
     d["result"]["id"] = lastCommandId;
     d["result"]["status"] = resultStatus;
@@ -161,9 +165,9 @@ void command(JsonDocument &d) {
   if (type == "config") {
     pascal::Config c;
     success = readConfig(d["payload"], c) && saveConfig(c, revision);
-  } else if (type == "override" && d["payload"]["light"].is<int>() &&
+  } else if (type == "override" && d["payload"]["output"].is<int>() &&
              d["payload"]["mode"].is<int>())
-    success = lightOverride(d["payload"]["light"], d["payload"]["mode"]);
+    success = outputMode(d["payload"]["output"], d["payload"]["mode"]);
   else if (type == "acknowledge")
     success = acknowledgeFaults();
   resultStatus = success ? "applied" : "rejected";
@@ -263,8 +267,9 @@ void setup() {
   if (storageReady) {
     if (storage.hasState() && !storage.load(controller, revision))
       storageReady = false;
-    controller.faults = storage.prefs.getUChar("faults", 0);
-    persistedFaults = controller.faults;
+    persistedFaults = storage.prefs.getUChar("faults", 0);
+    // Drop faults for removed hardware (old heater runtime); the loop persists the change.
+    controller.faults = persistedFaults & pascal::knownFaults;
     JsonDocument creds;
     if (!deserializeJson(creds, storage.prefs.getString("network", ""))) {
       network.ssid = creds["ssid"].as<String>();

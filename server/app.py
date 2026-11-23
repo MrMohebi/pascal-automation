@@ -205,13 +205,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             "rejected",
                             "Reported settings do not match requested settings",
                         )
-                    if (
-                        status == "applied"
-                        and row["kind"] == "override"
-                        and body.light_modes_persistent
-                    ):
+                    if status == "applied" and row["kind"] == "override":
                         payload = json.loads(row["payload"])
-                        selected = body.overrides[payload["light"]]
+                        selected = body.overrides[payload["output"]]
                         if (
                             body.revision != row["base_revision"] + 1
                             or selected.mode != payload["mode"]
@@ -219,7 +215,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         ):
                             status, message = (
                                 "rejected",
-                                "Reported saved light mode does not match request",
+                                "Reported saved output mode does not match request",
                             )
                     conn.execute(
                         "UPDATE commands SET status=?,message=? WHERE id=?",
@@ -282,7 +278,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 alerts.append("Sensor unavailable or recovering; outputs inhibited")
             if not reported["clock_ok"]:
                 alerts.append(
-                    "Clock unavailable; using saved profile and automatic light states until time returns"
+                    "Clock unavailable; using saved profile and automatic lamp state until time returns"
                     if reported.get("schedule_cached")
                     else "Clock unavailable and no saved schedule; outputs inhibited"
                 )
@@ -295,15 +291,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             elif reported["sensor_ok"]:
                 cfg = reported["config"]
                 profile = reported["profile"]
+                if reported["temperature"] >= cfg["max_temperature"] - 1:
+                    alerts.append("Temperature is close to the configured maximum")
                 if profile in ("day", "night"):
-                    if (
-                        not cfg[f"{profile}_temp_on"]
-                        <= reported["temperature"]
-                        <= cfg[f"{profile}_temp_off"]
-                    ):
-                        alerts.append(
-                            "Temperature is outside the configured control band"
-                        )
                     if (
                         not cfg[f"{profile}_rh_on"]
                         <= reported["humidity"]
@@ -365,7 +355,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if kind == "override" and (
                 not current["config"]
                 or (
-                    payload["mode"] != -1
+                    payload["mode"] == 1
                     and (
                         not current["config"]["enabled"]
                         or current["faults"]
@@ -374,7 +364,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             ):
                 raise HTTPException(
-                    409, "Light override blocked by setup or safety interlock"
+                    409, "Forcing ON is blocked by setup or a safety interlock"
                 )
             command_id = secrets.token_hex(16)
             conn.execute(
@@ -397,7 +387,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/overrides", dependencies=[Depends(session)])
     def override(body: OverrideChange):
-        return enqueue("override", {"light": body.light, "mode": body.mode}, body)
+        return enqueue("override", {"output": body.output, "mode": body.mode}, body)
 
     @app.post("/api/faults/acknowledge", dependencies=[Depends(session)])
     def acknowledge(body: Versioned):

@@ -1,4 +1,4 @@
-# Low-voltage wiring — layout v3
+# Low-voltage wiring — layout v4
 
 This is the owner's installed wiring for the **ESP32-WROOM-32**. The keypad has been removed. The display is now **128×64**, assumed SSD1306 I²C. The firmware probes addresses `0x3C` and `0x3D`; confirm readable text because an address response alone does not identify the controller.
 
@@ -7,16 +7,16 @@ This is the owner's installed wiring for the **ESP32-WROOM-32**. The keypad has 
 | DHT22 DATA | **4** | J2-13 |
 | OLED SDA | **21** | J2-6 |
 | OLED SCL | **22** | J2-3 |
-| Relay 1 — heater | **25** | J1-9 |
-| Relay 2 — humidifier | **26** | J1-10 |
-| Relay 3 — light 1 | **27** | J1-11 |
-| Relay 4 — light 2 | **14** | J1-12 |
+| Relay 1 — lamp | **25** | J1-9 |
+| Relay 2 — exhaust fan | **26** | J1-10 |
+| Relay 3 — humidifier | **27** | J1-11 |
+| Relay 4 — unused (held OFF) | **14** | J1-12 |
 | DHT22 VCC / OLED VCC | 3V3 | J1-1, shared rail |
 | DHT22 GND / OLED GND | GND | Any labelled GND, shared rail |
 
-Firmware assignments are centralized in [`include/board_pins.h`](../include/board_pins.h). Use GPIO labels rather than counting pins from an assumed USB orientation. The other four relay channels have no assigned GPIO.
+Firmware assignments are centralized in [`include/board_pins.h`](../include/board_pins.h). Use GPIO labels rather than counting pins from an assumed USB orientation. There is no heater output. GPIO14 (old light 2) is driven to the relay OFF level so the input cannot float. The other four relay channels have no assigned GPIO.
 
-Disconnect all power before changing wiring. The default `esp32dev` firmware simulates relay commands and does not configure or write the relay GPIOs. The commissioned `esp32dev-relays` build drives these four pins: LOW is OFF and HIGH (3.3 V) is ON for the owner's confirmed active-HIGH inputs. The relay module has a separate 5 V supply rating; do not feed 5 V into an ESP32 GPIO. See [commissioning](COMMISSIONING.md) for the confirmed hardware details and physical checks.
+Disconnect all power before changing wiring. The default `esp32dev` firmware simulates relay commands and does not configure or write the relay GPIOs. The commissioned `esp32dev-relays` build drives these pins: LOW is OFF and HIGH (3.3 V) is ON for the owner's confirmed active-HIGH inputs. The relay module has a separate 5 V supply rating; do not feed 5 V into an ESP32 GPIO. See [commissioning](COMMISSIONING.md) for the confirmed hardware details and physical checks.
 
 A bare four-pin DHT22 needs a DATA pull-up, normally 4.7–10 kΩ to **3V3**. Verify its labelled pinout before connecting it; the unused sensor pin stays disconnected. Breakout boards may include the pull-up. Keep the sensor away from direct mist, heater radiation, and ESP32 heat. A single sensor does not measure every point in the enclosure.
 

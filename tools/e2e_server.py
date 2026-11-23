@@ -39,7 +39,7 @@ def scenario(name: str):
         if name == "conflict":
             state["revision"] += 1
             if state["config"]:
-                state["config"]["day_temp_on"] += 0.1
+                state["config"]["day_rh_on"] += 0.1
             return {"ok": True}
         if name == "restart-offline-clock":
             state.update(
@@ -57,7 +57,7 @@ def scenario(name: str):
             return {"ok": True}
         if name == "fault":
             state["faults"] = ["overtemperature"]
-            state["outputs"] = [False] * 4
+            state["outputs"] = [False] * 3
             return {"ok": True}
         paused = False
         delay_commands = 0
@@ -69,7 +69,8 @@ def scenario(name: str):
                 profile="day",
                 schedule_cached=True,
                 reason="running",
-                outputs=[False, False, True, True],
+                outputs=[True, True, False],
+                fan_next_change_s=420,
             )
         with sqlite3.connect(settings.database) as conn:
             conn.execute("DELETE FROM commands")
@@ -83,7 +84,7 @@ def scenario(name: str):
                         24 + math.sin(n / 9),
                         45 + math.sin(n / 8) * 8,
                         1,
-                        "[false,false,true,true]",
+                        "[true,true,false]",
                         1,
                     ),
                 )
@@ -125,14 +126,16 @@ def device():
                     state["profile"] = "day"
                     state["reason"] = "running"
                 elif command["kind"] == "override":
-                    light = command["payload"]["light"]
+                    output = command["payload"]["output"]
                     mode = command["payload"]["mode"]
-                    state["overrides"][light] = {
+                    state["overrides"][output] = {
                         "mode": mode,
                         "until": 0,
                     }
                     state["revision"] += 1
-                    state["outputs"][light + 2] = mode != 0
+                    state["outputs"][output] = mode == 1 or (
+                        mode == -1 and output != 2
+                    )
                 elif command["kind"] == "acknowledge":
                     state["faults"] = []
                 state["result"] = {
