@@ -481,3 +481,22 @@ def test_period_switches_round_trip_and_default(rig):
     c["fan_night_enabled"] = "no"
     data.update(config=c)
     assert sync(rig, data).status_code == 422
+
+
+def test_force_on_allowed_without_sensor(rig):
+    client, _ = rig
+    data = telemetry()
+    data.update(
+        config=configuration(),
+        profile="day",
+        sensor_ok=False,
+        temperature=None,
+        humidity=None,
+        sample_age_ms=None,
+        reason="running without sensor",
+    )
+    sync(rig, data)
+    body = {"base_revision": 0, "boot_id": "test-boot", "output": 2, "mode": 1}
+    assert client.post("/api/overrides", json=body).status_code == 200
+    alerts = client.get("/api/status").json()["alerts"]
+    assert any("overheat protection inactive" in a for a in alerts)

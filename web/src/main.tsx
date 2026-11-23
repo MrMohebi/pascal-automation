@@ -61,8 +61,7 @@ const MODES = [
 ] as const;
 const modeName = (mode: number | undefined) =>
   mode === 1 ? "Forced ON" : mode === 0 ? "Forced OFF" : "Auto";
-const running = (d: Device) =>
-  d.reason === "running" || d.reason === "running saved state";
+const running = (d: Device) => d.reason.startsWith("running");
 
 function autoDescription(d: Device, i: number) {
   const c = d.config;
@@ -82,6 +81,7 @@ function autoDescription(d: Device, i: number) {
   }
   if (d.profile !== "unknown" && !c[`humidifier_${period}_enabled`])
     return `Off all ${period}`;
+  if (!d.sensor_ok) return "Auto paused · no humidity reading";
   return d.profile === "unknown"
     ? "Humidity controlled"
     : `ON below ${c[`${period}_rh_on`]}% · OFF at ${c[`${period}_rh_off`]}%`;
@@ -771,10 +771,7 @@ function App() {
                 const mode = d?.overrides[i]?.mode;
                 const state = d?.outputs[i];
                 const forceOnBlocked =
-                  !d?.config ||
-                  !d.config.enabled ||
-                  !!d.faults.length ||
-                  !d.sensor_ok;
+                  !d?.config || !d.config.enabled || !!d.faults.length;
                 const detail = !d
                   ? "Awaiting device"
                   : !d.config
@@ -819,7 +816,7 @@ function App() {
                           disabled={blocked || !d?.config || (value === 1 && forceOnBlocked)}
                           title={
                             value === 1 && forceOnBlocked
-                              ? "Forcing ON needs automation enabled, no faults, and a working sensor"
+                              ? "Forcing ON needs automation enabled and no latched faults"
                               : undefined
                           }
                           className={mode === value ? "selected" : ""}

@@ -242,35 +242,45 @@ int main() {
     assert(!c.setMode(Lamp, ModeOn, 10000));
     assert(c.setMode(Lamp, ModeOff, 10000));
     c = ready();
-    assert(!c.setMode(Humidifier, ModeOn, 30000));
+    assert(c.setMode(Humidifier, ModeOn, 30000)); // No sensor needed to force ON.
     Controller unconfigured;
     assert(!unconfigured.setMode(Lamp, ModeOff, 0));
     tests++;
   }
   {
-    // Sensor failure stops all outputs, recovery needs three good samples.
-    auto c = ready();
+    // Sensor failure only pauses Auto humidity control; recovery needs three good samples.
+    auto c = ready(10000, 23, 35);
     c.tick(10000, true, 600, epoch);
+    assert(c.outputs[Humidifier]);
     c.sample(NAN, 35, 12500);
     c.tick(12500, true, 600, epoch);
-    allOff(c);
+    assert(c.outputs[Lamp] && c.outputs[Fan] && !c.outputs[Humidifier]);
+    assert(std::string(c.reason) == "running without sensor");
     c.sample(23, 35, 15000);
     c.tick(15000, true, 600, epoch);
-    allOff(c);
     c.sample(23, 35, 17500);
     c.tick(17500, true, 600, epoch);
-    allOff(c);
-    c.sample(23, 35, 20000);
-    c.tick(20000, true, 600, epoch);
-    assert(c.outputs[Lamp] && c.outputs[Fan]);
+    assert(!c.outputs[Humidifier]);
+    c.sample(23, 35, 25000);
+    c.tick(25000, true, 600, epoch);
+    assert(c.outputs[Humidifier] && std::string(c.reason) == "running");
     tests++;
   }
   {
-    auto c = ready();
-    c.tick(10000, true, 600, epoch);
+    // Sensor never connected: lamp and fan run, faults can be acknowledged, mist can be forced.
+    Controller c;
+    c.begin(0);
+    assert(c.apply(example(), 0));
+    c.tick(20000, true, 600, epoch);
+    assert(!c.sensorReady(20000));
+    assert(c.outputs[Lamp] && c.outputs[Fan] && !c.outputs[Humidifier]);
+    c.faults = Overheat;
     c.tick(20000, true, 600, epoch);
     allOff(c);
-    assert(!c.sensorReady(20000));
+    assert(c.acknowledge(20000) && !c.faults);
+    assert(c.setMode(Humidifier, ModeOn, 20000));
+    c.tick(20000, true, 600, epoch);
+    assert(c.outputs[Humidifier]);
     tests++;
   }
   {
@@ -304,7 +314,7 @@ int main() {
     tests++;
   }
   {
-    // A restored forced mode waits for sensor recovery after reboot.
+    // A restored forced mode survives reboot.
     auto c = ready();
     assert(c.setMode(Lamp, ModeOn, 10000));
     Controller reboot;
@@ -313,12 +323,8 @@ int main() {
     c.updateSchedule(true, 1300);
     reboot.scheduleState = c.scheduleState;
     reboot.overrides[Lamp] = c.overrides[Lamp];
+    // Restored saved schedule and forced lamp apply right away, sensor or not.
     reboot.tick(0, false, 0, 0);
-    allOff(reboot);
-    reboot.sample(27, 55, 2500);
-    reboot.sample(27, 55, 5000);
-    reboot.sample(27, 55, 10000);
-    reboot.tick(10000, false, 0, 0);
     assert(reboot.outputs[Lamp] && reboot.overrides[Lamp].mode == ModeOn);
     tests++;
   }
@@ -401,7 +407,7 @@ int main() {
     assert(c.overrides[Lamp].mode == ModeOff && !c.outputs[Lamp] && c.outputs[Fan]);
     c.sample(NAN, NAN, 12500);
     c.tick(12500, false, 0, 0);
-    allOff(c);
+    assert(!c.outputs[Lamp] && c.outputs[Fan] && !c.outputs[Humidifier]);
     tests++;
   }
   {

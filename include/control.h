@@ -97,18 +97,24 @@ public:
   bool sensorReady(uint32_t now) const {
     return sampled && sampleValid && goodSamples >= 3 && uint32_t(now - sampleAt) < 10000;
   }
+  // A fresh valid reading at or above the maximum. Without a sensor this is never true,
+  // so overheat protection only works while the DHT22 is connected.
+  bool tooHot(uint32_t now) const {
+    return configured && sampled && sampleValid && uint32_t(now - sampleAt) < 10000 &&
+           temperature >= config.max_temperature;
+  }
   bool acknowledge(uint32_t now) {
-    if (!configured || !sensorReady(now) || temperature >= config.max_temperature)
+    if (!configured || tooHot(now))
       return false;
     faults = 0;
     stop(now);
     return true;
   }
-  // Auto and Off are always accepted; forcing ON requires a healthy, enabled system.
-  bool setMode(int output, int mode, uint32_t now) {
+  // Auto and Off are always accepted; forcing ON requires automation enabled and no faults.
+  bool setMode(int output, int mode, uint32_t) {
     if (output < 0 || output >= outputCount || mode < ModeAuto || mode > ModeOn || !configured)
       return false;
-    if (mode == ModeOn && (!config.enabled || faults || !sensorReady(now)))
+    if (mode == ModeOn && (!config.enabled || faults))
       return false;
     if (output == Fan && mode == ModeAuto && overrides[Fan].mode != ModeAuto)
       fanCycleValid = false; // Returning to Auto starts a fresh ON period.
@@ -164,8 +170,7 @@ public:
     isDay = scheduleState.day;
     if (!sampled || uint32_t(now - sampleAt) >= 10000)
       goodSamples = 0;
-    if (configured && sampleValid && uint32_t(now - sampleAt) < 10000 &&
-        temperature >= config.max_temperature)
+    if (tooHot(now))
       faults |= Overheat;
     if (configured && outputs[Humidifier] &&
         uint32_t(now - onAt[Humidifier]) >= uint32_t(config.humidifier_max_seconds) * 1000)
@@ -174,11 +179,11 @@ public:
              : faults               ? "latched fault"
              : !config.enabled      ? "disabled"
              : !scheduleState.known ? "clock invalid"
-             : !sensorReady(now)    ? "sensor not ready"
+             : !sensorReady(now)    ? "running without sensor"
              : !clockValid          ? "running saved state"
                                     : "running";
     const bool fanAuto = configured && scheduleState.known && fanCycleOn(now);
-    if (!configured || faults || !config.enabled || !scheduleState.known || !sensorReady(now)) {
+    if (!configured || faults || !config.enabled || !scheduleState.known) {
       stop(now);
       return;
     }
@@ -187,8 +192,9 @@ public:
     const double lo = isDay ? config.day_rh_on : config.night_rh_on;
     const double hi = isDay ? config.day_rh_off : config.night_rh_off;
     bool mist = outputs[Humidifier];
+    // Lamp and fan never need the sensor; Auto humidity control pauses without it.
     if (overrides[Humidifier].mode == ModeAuto)
-      mist = humidifierEnabled() && (mist ? humidity < hi : humidity < lo);
+      mist = humidifierEnabled() && sensorReady(now) && (mist ? humidity < hi : humidity < lo);
     else
       mist = overrides[Humidifier].mode == ModeOn;
     // Minimum OFF time protects restarts in every mode; shutdown never waits.

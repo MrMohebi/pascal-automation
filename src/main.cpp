@@ -64,13 +64,10 @@ String rejection(const String &type, int mode) {
     return "Device rejected these settings as invalid";
   if (!controller.configured)
     return "Save settings first";
-  if (type == "acknowledge" || mode == pascal::ModeOn) {
-    const char *action = type == "acknowledge" ? "clear faults" : "force ON";
-    if (!controller.sensorReady(now))
-      return String("Cannot ") + action + ": temperature/humidity sensor has no valid reading";
-    if (type == "acknowledge")
-      return "Cannot clear faults: temperature " + String(controller.temperature, 1) +
-             " C is not below the maximum " + String(controller.config.max_temperature, 1) + " C";
+  if (type == "acknowledge" && controller.tooHot(now))
+    return "Cannot clear faults: temperature " + String(controller.temperature, 1) +
+           " C is not below the maximum " + String(controller.config.max_temperature, 1) + " C";
+  if (mode == pascal::ModeOn) {
     if (controller.faults)
       return "Cannot force ON while a fault is latched; acknowledge it first";
     if (!controller.config.enabled)
@@ -79,8 +76,7 @@ String rejection(const String &type, int mode) {
   return "Rejected by device";
 }
 bool acknowledgeFaults() {
-  if (!storageReady || !controller.configured || !controller.sensorReady(millis()) ||
-      controller.temperature >= controller.config.max_temperature)
+  if (!storageReady || !controller.configured || controller.tooHot(millis()))
     return false;
   if (storage.prefs.putUChar("faults", 0) != 1)
     return false;

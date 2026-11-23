@@ -275,7 +275,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         if reported:
             if not reported["sensor_ok"]:
-                alerts.append("Sensor unavailable or recovering; outputs inhibited")
+                alerts.append(
+                    "Sensor unavailable: humidifier Auto paused and overheat protection inactive"
+                )
             if not reported["clock_ok"]:
                 alerts.append(
                     "Clock unavailable; using saved profile and automatic lamp state until time returns"
@@ -356,11 +358,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 not current["config"]
                 or (
                     payload["mode"] == 1
-                    and (
-                        not current["config"]["enabled"]
-                        or current["faults"]
-                        or not current["sensor_ok"]
-                    )
+                    and (not current["config"]["enabled"] or current["faults"])
                 )
             ):
                 raise HTTPException(

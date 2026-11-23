@@ -35,9 +35,9 @@ int main() {
     restored.begin(0);
     uint32_t rev = 0;
     assert(afterPowerLoss.load(restored, rev) && rev == 7);
+    // Before any sensor reading, the saved lamp/fan modes already apply; mist waits.
     restored.tick(0, false, 0, 0);
-    for (bool output : restored.outputs)
-      assert(!output);
+    assert(!restored.outputs[Lamp] && restored.outputs[Fan] && !restored.outputs[Humidifier]);
     recover(restored, 23, 35);
     assert(restored.isDay && !restored.outputs[Lamp] && restored.outputs[Fan]);
     assert(restored.outputs[Humidifier]);
