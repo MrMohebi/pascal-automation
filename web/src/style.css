@@ -817,3 +817,11 @@ footer {
     transition: none !important;
   }
 }
+.field-grid .period-switch {
+  display: flex;
+  font-weight: 600;
+  color: #365740;
+}
+.field-grid input:disabled {
+  opacity: 0.45;
+}

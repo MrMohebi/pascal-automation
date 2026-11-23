@@ -20,6 +20,9 @@ struct Config {
   int fan_day_on_minutes = 0, fan_day_off_minutes = 0;
   int fan_night_on_minutes = 0, fan_night_off_minutes = 0;
   int min_off_seconds = 0, humidifier_max_seconds = 0;
+  // Automatic mode only: false keeps that output OFF for the whole day or night.
+  bool fan_day_enabled = true, fan_night_enabled = true;
+  bool humidifier_day_enabled = true, humidifier_night_enabled = true;
 };
 inline bool band(double lo, double hi, double min, double max) {
   return std::isfinite(lo) && std::isfinite(hi) && lo >= min && hi <= max && lo < hi;
@@ -120,7 +123,13 @@ public:
     scheduleState.lamp = within(minute, config.lamp_on, config.lamp_off);
     isDay = scheduleState.day;
   }
+  bool fanEnabled() const { return isDay ? config.fan_day_enabled : config.fan_night_enabled; }
+  bool humidifierEnabled() const {
+    return isDay ? config.humidifier_day_enabled : config.humidifier_night_enabled;
+  }
   int fanOnMinutes() const {
+    if (!fanEnabled())
+      return 0;
     return isDay ? config.fan_day_on_minutes : config.fan_night_on_minutes;
   }
   int fanOffMinutes() const {
@@ -179,7 +188,7 @@ public:
     const double hi = isDay ? config.day_rh_off : config.night_rh_off;
     bool mist = outputs[Humidifier];
     if (overrides[Humidifier].mode == ModeAuto)
-      mist = mist ? humidity < hi : humidity < lo;
+      mist = humidifierEnabled() && (mist ? humidity < hi : humidity < lo);
     else
       mist = overrides[Humidifier].mode == ModeOn;
     // Minimum OFF time protects restarts in every mode; shutdown never waits.

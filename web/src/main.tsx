@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { Configuration, Device, NumericKey, Point, Status } from "./types";
+import type {
+  Configuration,
+  Device,
+  NumericKey,
+  Point,
+  Status,
+  SwitchKey,
+} from "./types";
 import "./style.css";
 
 async function api(path: string, method = "GET", body?: unknown, csrf = "") {
@@ -69,10 +76,12 @@ function autoDescription(d: Device, i: number) {
     const on = c[`fan_${period}_on_minutes`],
       off = c[`fan_${period}_off_minutes`];
     if (d.profile === "unknown") return "Waiting for day/night profile";
-    if (on === 0) return `Off all ${period}`;
+    if (!c[`fan_${period}_enabled`] || on === 0) return `Off all ${period}`;
     if (off === 0) return `Runs all ${period}`;
     return `${period === "day" ? "Day" : "Night"} cycle ${on} min on / ${off} min off`;
   }
+  if (d.profile !== "unknown" && !c[`humidifier_${period}_enabled`])
+    return `Off all ${period}`;
   return d.profile === "unknown"
     ? "Humidity controlled"
     : `ON below ${c[`${period}_rh_on`]}% · OFF at ${c[`${period}_rh_off`]}%`;
@@ -219,7 +228,20 @@ function Chart({
   );
 }
 
-type Field = [NumericKey, string, "number" | "time", string?];
+type Field =
+  | [NumericKey, string, "number" | "time", string?]
+  | [SwitchKey, string, "check", string?];
+// A period switch that is off greys out the inputs it makes irrelevant.
+const switchFor = (key: string): SwitchKey | null =>
+  key.startsWith("fan_day_")
+    ? "fan_day_enabled"
+    : key.startsWith("fan_night_")
+      ? "fan_night_enabled"
+      : key.startsWith("day_rh_")
+        ? "humidifier_day_enabled"
+        : key.startsWith("night_rh_")
+          ? "humidifier_night_enabled"
+          : null;
 const sections: { title: string; description: string; fields: Field[] }[] = [
   {
     title: "Day & night",
@@ -242,8 +264,10 @@ const sections: { title: string; description: string; fields: Field[] }[] = [
   {
     title: "Exhaust fan",
     description:
-      "Repeating cycle (GPIO 26): runs for ON minutes, then rests for OFF minutes. Each day/night change restarts the cycle with ON. Set ON to 0 to keep the fan off, or OFF to 0 to run it continuously.",
+      "Repeating cycle (GPIO 26): runs for ON minutes, then rests for OFF minutes. Each day/night change restarts the cycle with ON. Untick a period to keep the fan off for all of it, or set OFF to 0 to run it continuously.",
     fields: [
+      ["fan_day_enabled", "Run during the day", "check"],
+      ["fan_night_enabled", "Run during the night", "check"],
       ["fan_day_on_minutes", "Day · ON for", "number", "minutes"],
       ["fan_day_off_minutes", "Day · then OFF for", "number", "minutes"],
       ["fan_night_on_minutes", "Night · ON for", "number", "minutes"],
@@ -253,8 +277,10 @@ const sections: { title: string; description: string; fields: Field[] }[] = [
   {
     title: "Humidity",
     description:
-      "Humidifier (GPIO 27) turns on below ON and off at OFF. Values are % RH.",
+      "Humidifier (GPIO 27) turns on below ON and off at OFF. Values are % RH. Untick a period to keep the humidifier off for all of it.",
     fields: [
+      ["humidifier_day_enabled", "Run during the day", "check"],
+      ["humidifier_night_enabled", "Run during the night", "check"],
       ["day_rh_on", "Day · ON below", "number"],
       ["day_rh_off", "Day · OFF at", "number"],
       ["night_rh_on", "Night · ON below", "number"],
@@ -290,9 +316,11 @@ function SettingsForm({
         ([k, , kind]) =>
           (next[k] = c
             ? kind === "time"
-              ? minuteText(c[k])
+              ? minuteText(c[k] as number)
               : String(c[k])
-            : ""),
+            : kind === "check"
+              ? "true"
+              : ""),
       ),
     );
     return next;
@@ -331,9 +359,11 @@ function SettingsForm({
           s.fields.forEach(([key, , kind]) => {
             const val = draft[key];
             config[key] =
-              kind === "time"
-                ? Number(val.split(":")[0]) * 60 + Number(val.split(":")[1])
-                : Number(val);
+              kind === "check"
+                ? val === "true"
+                : kind === "time"
+                  ? Number(val.split(":")[0]) * 60 + Number(val.split(":")[1])
+                  : Number(val);
           }),
         );
         if (await submit("/config", "PUT", { ...base, config }))
@@ -366,7 +396,21 @@ function SettingsForm({
             <h3>{s.title}</h3>
             <p>{s.description}</p>
             <div className="field-grid">
-              {s.fields.map(([key, label, kind, unit]) => (
+              {s.fields.map(([key, label, kind, unit]) =>
+                kind === "check" ? (
+                  <label key={key} className="checkbox period-switch">
+                    <input
+                      type="checkbox"
+                      checked={draft[key] === "true"}
+                      onChange={(e) => {
+                        const value = String(e.target.checked);
+                        setDraft((previous) => ({ ...previous, [key]: value }));
+                        setDirty(true);
+                      }}
+                    />{" "}
+                    {label}
+                  </label>
+                ) : (
                 <label key={key}>
                   {label}
                   {unit && <small>{unit}</small>}
@@ -382,6 +426,10 @@ function SettingsForm({
                     }
                     min={key.includes("minutes") ? 0 : undefined}
                     max={key.includes("minutes") ? 1440 : undefined}
+                    disabled={
+                      switchFor(key) !== null &&
+                      draft[switchFor(key)!] === "false"
+                    }
                     value={draft[key] ?? ""}
                     onChange={(e) => {
                       const value = e.target.value;
@@ -390,7 +438,8 @@ function SettingsForm({
                     }}
                   />
                 </label>
-              ))}
+                ),
+              )}
             </div>
           </section>
         ))}

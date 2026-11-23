@@ -13,6 +13,20 @@ int main() {
   pascal::Config decoded;
   assert(readConfig(roundtrip.as<JsonVariantConst>(), decoded));
   assert(decoded.enabled && decoded.lamp_off == 1140 && decoded.fan_night_off_minutes == 55);
+  // Day/night switches default to enabled when absent (settings saved before they existed).
+  assert(decoded.fan_day_enabled && decoded.fan_night_enabled && decoded.humidifier_day_enabled &&
+         decoded.humidifier_night_enabled);
+  d["fan_night_enabled"] = false;
+  d["humidifier_day_enabled"] = false;
+  assert(readConfig(d.as<JsonVariantConst>(), c));
+  assert(!c.fan_night_enabled && !c.humidifier_day_enabled && c.fan_day_enabled);
+  JsonDocument written;
+  writeConfig(written.to<JsonObject>(), c);
+  assert(written["fan_night_enabled"] == false && written["humidifier_night_enabled"] == true);
+  d["fan_night_enabled"] = 0;
+  assert(!readConfig(d.as<JsonVariantConst>(), c));
+  d.remove("fan_night_enabled");
+  d.remove("humidifier_day_enabled");
   d["day_start"] = 480.5;
   assert(!readConfig(d.as<JsonVariantConst>(), c));
   d["day_start"] = 480;

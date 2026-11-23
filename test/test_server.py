@@ -61,6 +61,10 @@ def configuration():
         fan_night_off_minutes=55,
         min_off_seconds=60,
         humidifier_max_seconds=120,
+        fan_day_enabled=True,
+        fan_night_enabled=True,
+        humidifier_day_enabled=True,
+        humidifier_night_enabled=True,
     )
 
 
@@ -457,4 +461,23 @@ def test_fan_cycle_requires_some_duration(rig):
 def test_old_four_channel_telemetry_is_rejected(rig):
     data = telemetry()
     data.update(outputs=[False] * 4, overrides=[dict(mode=-1, until=0)] * 2)
+    assert sync(rig, data).status_code == 422
+
+
+def test_period_switches_round_trip_and_default(rig):
+    client, _ = rig
+    sync(rig)
+    c = configuration()
+    c.update(fan_night_enabled=False, humidifier_night_enabled=False)
+    body = {"base_revision": 0, "boot_id": "test-boot", "config": c}
+    assert client.put("/api/config", json=body).status_code == 200
+    assert sync(rig).json()["command"]["payload"]["fan_night_enabled"] is False
+    client2_config = configuration()
+    for key in ("fan_day_enabled", "fan_night_enabled"):
+        client2_config.pop(key)
+    data = telemetry()
+    data.update(config=client2_config)
+    assert sync(rig, data).status_code == 200
+    c["fan_night_enabled"] = "no"
+    data.update(config=c)
     assert sync(rig, data).status_code == 422

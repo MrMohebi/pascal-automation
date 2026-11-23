@@ -15,8 +15,18 @@ export type Configuration = {
   fan_night_off_minutes: number;
   min_off_seconds: number;
   humidifier_max_seconds: number;
+  // Automatic mode only: false keeps the output OFF for that whole period.
+  fan_day_enabled: boolean;
+  fan_night_enabled: boolean;
+  humidifier_day_enabled: boolean;
+  humidifier_night_enabled: boolean;
 };
-export type NumericKey = Exclude<keyof Configuration, "enabled">;
+export type SwitchKey =
+  | "fan_day_enabled"
+  | "fan_night_enabled"
+  | "humidifier_day_enabled"
+  | "humidifier_night_enabled";
+export type NumericKey = Exclude<keyof Configuration, "enabled" | SwitchKey>;
 export type Device = {
   boot_id: string;
   revision: number;

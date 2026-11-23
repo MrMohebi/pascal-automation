@@ -24,6 +24,11 @@ class Configuration(Model):
     fan_night_off_minutes: int = Field(ge=0, le=1440, strict=True)
     min_off_seconds: int = Field(ge=1, le=3600, strict=True)
     humidifier_max_seconds: int = Field(ge=1, le=86400, strict=True)
+    # Automatic mode only: False keeps the output OFF for that whole period.
+    fan_day_enabled: bool = Field(default=True, strict=True)
+    fan_night_enabled: bool = Field(default=True, strict=True)
+    humidifier_day_enabled: bool = Field(default=True, strict=True)
+    humidifier_night_enabled: bool = Field(default=True, strict=True)
 
     @model_validator(mode="after")
     def validate_relationships(self):

@@ -404,5 +404,49 @@ int main() {
     allOff(c);
     tests++;
   }
+  {
+    // Fan off all night: Auto stays OFF at night and resumes its cycle by day.
+    auto c = ready();
+    auto cfg = example();
+    cfg.fan_night_enabled = false;
+    assert(c.apply(cfg, 10000));
+    run(c, 10000, true, 1300, 23, 65);
+    assert(!c.isDay && !c.outputs[Fan] && c.fanCycleRemaining(10000) == -1);
+    run(c, 10000 + 30 * minute, true, 1300, 23, 65);
+    assert(!c.outputs[Fan]);
+    run(c, 10000 + 31 * minute, true, 600);
+    assert(c.isDay && c.outputs[Fan]);
+    // A forced ON still wins over the night switch.
+    run(c, 10000 + 32 * minute, true, 1300, 23, 65);
+    assert(c.setMode(Fan, ModeOn, 10000 + 32 * minute));
+    run(c, 10000 + 32 * minute, true, 1300, 23, 65);
+    assert(c.outputs[Fan]);
+    tests++;
+  }
+  {
+    // Humidifier off all night ignores dry air at night only.
+    auto c = ready();
+    auto cfg = example();
+    cfg.humidifier_night_enabled = false;
+    assert(c.apply(cfg, 0));
+    run(c, 10000, true, 1300, 23, 20);
+    assert(!c.outputs[Humidifier]);
+    run(c, 12500, true, 600, 23, 20);
+    assert(c.outputs[Humidifier]);
+    // Running humidifier stops at the night transition.
+    run(c, 15000, true, 1300, 23, 20);
+    assert(!c.outputs[Humidifier]);
+    tests++;
+  }
+  {
+    // Humidifier off all day.
+    auto c = ready();
+    auto cfg = example();
+    cfg.humidifier_day_enabled = false;
+    assert(c.apply(cfg, 0));
+    run(c, 10000, true, 600, 23, 20);
+    assert(!c.outputs[Humidifier] && c.outputs[Fan]);
+    tests++;
+  }
   std::cout << tests << " controller scenarios passed\n";
 }

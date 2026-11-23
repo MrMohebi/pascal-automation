@@ -222,3 +222,25 @@ test("chart hover follows the pointer on a wide, letterboxed chart", async ({ pa
     await expect(page.locator(".temperature .hover-dot")).toBeVisible();
   }
 });
+
+
+test("fan and humidifier can be switched off for the whole night", async ({ page }) => {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const fanNight = page
+    .locator("section", { hasText: "Exhaust fan" })
+    .getByLabel("Run during the night");
+  const mistNight = page
+    .locator("section", { hasText: "Humidity" })
+    .getByLabel("Run during the night");
+  await expect(fanNight).toBeChecked();
+  await fanNight.uncheck();
+  await mistNight.uncheck();
+  await expect(page.getByLabel(/^Night · ON for/)).toBeDisabled();
+  await page.getByRole("button", { name: "Save to device" }).click();
+  await expect(page.getByText("Revision 2", { exact: true })).toBeVisible({
+    timeout: 15000,
+  });
+  await expect(fanNight).not.toBeChecked();
+  await expect(mistNight).not.toBeChecked();
+  await expect(page.locator("section", { hasText: "Exhaust fan" }).getByLabel("Run during the day")).toBeChecked();
+});

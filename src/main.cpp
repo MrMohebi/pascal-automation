@@ -55,6 +55,29 @@ bool outputMode(int output, int mode) {
   revision++;
   return true;
 }
+// Explains a rejected command; shown on the dashboard's recent changes.
+String rejection(const String &type, int mode) {
+  const uint32_t now = millis();
+  if (!storageReady)
+    return "Storage error on device";
+  if (type == "config")
+    return "Device rejected these settings as invalid";
+  if (!controller.configured)
+    return "Save settings first";
+  if (type == "acknowledge" || mode == pascal::ModeOn) {
+    const char *action = type == "acknowledge" ? "clear faults" : "force ON";
+    if (!controller.sensorReady(now))
+      return String("Cannot ") + action + ": temperature/humidity sensor has no valid reading";
+    if (type == "acknowledge")
+      return "Cannot clear faults: temperature " + String(controller.temperature, 1) +
+             " C is not below the maximum " + String(controller.config.max_temperature, 1) + " C";
+    if (controller.faults)
+      return "Cannot force ON while a fault is latched; acknowledge it first";
+    if (!controller.config.enabled)
+      return "Cannot force ON while automatic control is disabled";
+  }
+  return "Rejected by device";
+}
 bool acknowledgeFaults() {
   if (!storageReady || !controller.configured || !controller.sensorReady(millis()) ||
       controller.temperature >= controller.config.max_temperature)
@@ -171,8 +194,8 @@ void command(JsonDocument &d) {
   else if (type == "acknowledge")
     success = acknowledgeFaults();
   resultStatus = success ? "applied" : "rejected";
-  resultMessage =
-      success ? "Applied on device" : "Invalid settings, storage error, or active safety interlock";
+  resultMessage = success ? String("Applied on device")
+                          : rejection(type, d["payload"]["mode"] | pascal::ModeAuto);
 }
 void serialInput() {
   static String line;

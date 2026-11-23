@@ -8,10 +8,13 @@
   X(day_end) X(lamp_on) X(lamp_off) X(fan_day_on_minutes) X(fan_day_off_minutes)                   \
       X(fan_night_on_minutes) X(fan_night_off_minutes) X(min_off_seconds)                          \
           X(humidifier_max_seconds)
+// Optional on read (default true) so settings saved before they existed still load.
+#define CONFIG_PERIOD_BOOLS(X)                                                                     \
+  X(fan_day_enabled) X(fan_night_enabled) X(humidifier_day_enabled) X(humidifier_night_enabled)
 inline void writeConfig(JsonObject o, const pascal::Config &c) {
   o["enabled"] = c.enabled;
 #define WRITE_FIELD(f) o[#f] = c.f;
-  CONFIG_FLOATS(WRITE_FIELD) CONFIG_INTS(WRITE_FIELD)
+  CONFIG_FLOATS(WRITE_FIELD) CONFIG_INTS(WRITE_FIELD) CONFIG_PERIOD_BOOLS(WRITE_FIELD)
 #undef WRITE_FIELD
 }
 inline bool readConfig(JsonVariantConst o, pascal::Config &c) {
@@ -26,10 +29,19 @@ inline bool readConfig(JsonVariantConst o, pascal::Config &c) {
   if (!o[#f].is<int>())                                                                            \
     return false;                                                                                  \
   c.f = o[#f].as<int>();
+#define READ_PERIOD_BOOL(f)                                                                        \
+  if (o[#f].isNull())                                                                              \
+    c.f = true;                                                                                    \
+  else if (o[#f].is<bool>())                                                                       \
+    c.f = o[#f].as<bool>();                                                                        \
+  else                                                                                             \
+    return false;
   CONFIG_FLOATS(READ_FLOAT)
   CONFIG_INTS(READ_INT)
+  CONFIG_PERIOD_BOOLS(READ_PERIOD_BOOL)
 #undef READ_FLOAT
 #undef READ_INT
+#undef READ_PERIOD_BOOL
   return pascal::valid(c);
 }
 // Layout v3 settings (heater, humidifier, two lights). The heater thresholds are
