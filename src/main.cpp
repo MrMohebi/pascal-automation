@@ -17,7 +17,6 @@ DHT sensor(boardpins::dht, DHT22);
 uint32_t revision = 0;
 String bootId, lastCommandId, resultStatus, resultMessage;
 bool storageReady = false;
-uint8_t persistedFaults = 0;
 
 int secondsToday() {
   time_t t = time(nullptr);
@@ -57,31 +56,15 @@ bool outputMode(int output, int mode) {
 }
 // Explains a rejected command; shown on the dashboard's recent changes.
 String rejection(const String &type, int mode) {
-  const uint32_t now = millis();
   if (!storageReady)
     return "Storage error on device";
   if (type == "config")
     return "Device rejected these settings as invalid";
   if (!controller.configured)
     return "Save settings first";
-  if (type == "acknowledge" && controller.tooHot(now))
-    return "Cannot clear faults: temperature " + String(controller.temperature, 1) +
-           " C is not below the maximum " + String(controller.config.max_temperature, 1) + " C";
-  if (mode == pascal::ModeOn) {
-    if (controller.faults)
-      return "Cannot force ON while a fault is latched; acknowledge it first";
-    if (!controller.config.enabled)
-      return "Cannot force ON while automatic control is disabled";
-  }
+  if (mode == pascal::ModeOn && !controller.config.enabled)
+    return "Cannot force ON while automatic control is disabled";
   return "Rejected by device";
-}
-bool acknowledgeFaults() {
-  if (!storageReady || !controller.configured || controller.tooHot(millis()))
-    return false;
-  if (storage.prefs.putUChar("faults", 0) != 1)
-    return false;
-  persistedFaults = 0;
-  return controller.acknowledge(millis());
 }
 bool setClock(const String &s) {
   if (s.length() != 12)
@@ -147,8 +130,6 @@ void snapshot(JsonDocument &d) {
   auto faults = d["faults"].to<JsonArray>();
   if (controller.faults & pascal::Overheat)
     faults.add("overtemperature");
-  if (controller.faults & pascal::HumidifierTimeout)
-    faults.add("humidifier_runtime");
   if (!storageReady)
     faults.add("storage_failure");
   auto ovs = d["overrides"].to<JsonArray>();
@@ -157,6 +138,7 @@ void snapshot(JsonDocument &d) {
     obj["mode"] = o.mode;
     obj["until"] = 0; // No expiry: saved until explicitly changed.
   }
+  d["humidifier_resting"] = controller.humidifierResting(now);
   const int32_t fanRemaining = controller.fanCycleRemaining(now);
   if (controller.configured && controller.scheduleState.known && fanRemaining >= 0)
     d["fan_next_change_s"] = fanRemaining;
@@ -187,8 +169,6 @@ void command(JsonDocument &d) {
   } else if (type == "override" && d["payload"]["output"].is<int>() &&
              d["payload"]["mode"].is<int>())
     success = outputMode(d["payload"]["output"], d["payload"]["mode"]);
-  else if (type == "acknowledge")
-    success = acknowledgeFaults();
   resultStatus = success ? "applied" : "rejected";
   resultMessage = success ? String("Applied on device")
                           : rejection(type, d["payload"]["mode"] | pascal::ModeAuto);
@@ -286,9 +266,9 @@ void setup() {
   if (storageReady) {
     if (storage.hasState() && !storage.load(controller, revision))
       storageReady = false;
-    persistedFaults = storage.prefs.getUChar("faults", 0);
-    // Drop faults for removed hardware (old heater runtime); the loop persists the change.
-    controller.faults = persistedFaults & pascal::knownFaults;
+    // Faults used to latch across reboots; nothing latches now, so drop the old record.
+    if (storage.prefs.isKey("faults"))
+      storage.prefs.remove("faults");
     JsonDocument creds;
     if (!deserializeJson(creds, storage.prefs.getString("network", ""))) {
       network.ssid = creds["ssid"].as<String>();
@@ -325,12 +305,6 @@ void loop() {
   if (storageReady && controller.scheduleState != previousSchedule &&
       !storage.save(controller, revision))
     storageReady = false;
-  if (controller.faults != persistedFaults) {
-    if (storageReady && storage.prefs.putUChar("faults", controller.faults) == 1)
-      persistedFaults = controller.faults;
-    else
-      storageReady = false;
-  }
   if (!storageReady)
     for (bool &state : controller.outputs)
       state = false;

@@ -35,9 +35,7 @@ public:
     if (!storage)
       errors[errorCount++] = "Storage failure";
     if (c.faults & pascal::Overheat)
-      errors[errorCount++] = "Overtemperature";
-    if (c.faults & pascal::HumidifierTimeout)
-      errors[errorCount++] = "Humidifier runtime";
+      errors[errorCount++] = "Too hot: lamp OFF";
     if (!c.sensorReady(now))
       errors[errorCount++] = "Sensor (DHT22)";
     if (!c.configured)

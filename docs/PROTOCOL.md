@@ -11,7 +11,6 @@ Single terrarium, single device, single owner in version 1. Browser API schema i
 | GET `/api/history?hours=24` | Time-bucketed readings; supported windows 24, 168, 720 hours |
 | PUT `/api/config` | `{boot_id,base_revision,config}` → pending command ID |
 | POST `/api/overrides` | `{boot_id,base_revision,light,mode}`; light 0/1, mode -1=Auto, 0=Off, 1=On |
-| POST `/api/faults/acknowledge` | `{boot_id,base_revision}`; device checks the fault-clear conditions |
 | POST `/api/device/sync` | Device telemetry and acknowledged results; no authentication |
 
 Device snapshots use protocol version 1, boot ID, monotonic uptime, settings revision, the entire applied configuration (or null before setup), temperature/humidity, sample age, sensor/clock/display/storage health, Wi-Fi RSSI, simulated flag, profile, inhibit reason, four commanded output states, fault names, and two light selection states. Current firmware adds `schedule_cached` (a saved schedule/profile is available) and `light_modes_persistent` (manual light modes survive restart); these default to false for older firmware. With persistent modes, `until` is zero and mode changes increment the revision. Output order is heater, humidifier, light 1, light 2.

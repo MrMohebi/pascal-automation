@@ -43,6 +43,7 @@ export type Device = {
   reason: string;
   outputs: boolean[];
   faults: string[];
+  humidifier_resting?: boolean;
   // Same order as outputs: lamp, fan, humidifier. -1 Auto, 0 forced OFF, 1 forced ON.
   overrides: { mode: number; until: number }[];
   fan_next_change_s?: number | null;

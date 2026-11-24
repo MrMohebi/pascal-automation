@@ -67,6 +67,10 @@ function autoDescription(d: Device, i: number) {
   const c = d.config;
   if (!c) return "Setup required";
   const period = d.profile === "night" ? "night" : "day";
+  if (i === 0 && d.faults.includes("overtemperature"))
+    return `Too hot · OFF until below ${c.max_temperature - 1} °C`;
+  if (i === 2 && d.humidifier_resting)
+    return "Resting after maximum run · resumes shortly";
   if (i === 0)
     return !d.clock_ok && d.schedule_cached
       ? "Holding saved automatic state"
@@ -290,7 +294,7 @@ const sections: { title: string; description: string; fields: Field[] }[] = [
   {
     title: "Safety limits",
     description:
-      "Required before automation can run. Reaching the maximum temperature or humidifier runtime switches every output OFF until acknowledged.",
+      "Required before automation can run. At the maximum temperature only the lamp is held OFF, until it is 1 °C cooler. After its maximum run the humidifier pauses for its minimum OFF time, then resumes. Nothing needs to be acknowledged.",
     fields: [
       ["max_temperature", "Maximum temperature", "number", "°C"],
       ["min_off_seconds", "Humidifier minimum OFF time", "number", "seconds"],
@@ -770,8 +774,7 @@ function App() {
               {OUTPUTS.map(({ name, symbol, pin }, i) => {
                 const mode = d?.overrides[i]?.mode;
                 const state = d?.outputs[i];
-                const forceOnBlocked =
-                  !d?.config || !d.config.enabled || !!d.faults.length;
+                const forceOnBlocked = !d?.config || !d.config.enabled;
                 const detail = !d
                   ? "Awaiting device"
                   : !d.config
@@ -816,7 +819,7 @@ function App() {
                           disabled={blocked || !d?.config || (value === 1 && forceOnBlocked)}
                           title={
                             value === 1 && forceOnBlocked
-                              ? "Forcing ON needs automation enabled and no latched faults"
+                              ? "Forcing ON needs automation enabled"
                               : undefined
                           }
                           className={mode === value ? "selected" : ""}
@@ -908,16 +911,6 @@ function App() {
                       : "Waiting for the first device report."}
                   </p>
                 )}
-                {!!d?.faults.length && (
-                  <button
-                    disabled={blocked}
-                    onClick={() =>
-                      submit("/faults/acknowledge", "POST", version)
-                    }
-                  >
-                    Acknowledge resolved faults
-                  </button>
-                )}
                 <div className="diagnostics">
                   <span>
                     Clock <b>{d?.clock_ok ? "Ready" : d?.schedule_cached ? "Saved schedule" : "Not set"}</b>
@@ -942,7 +935,7 @@ function App() {
                               ? "Settings"
                               : c.kind === "override"
                                 ? "Equipment mode"
-                                : "Fault acknowledgment"}
+                                : "Fault acknowledgment (old)"}
                           </strong>
                           <small>
                             {date(c.created, true)} · {c.message}

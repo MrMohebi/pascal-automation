@@ -46,9 +46,12 @@ inline bool valid(const Config &c) {
 inline bool within(int minute, int start, int end) {
   return start < end ? minute >= start && minute < end : minute >= start || minute < end;
 }
-// Bit 2 was the removed heater runtime fault; it is never set and is cleared on load.
-enum Fault : uint8_t { Overheat = 1, HumidifierTimeout = 4 };
-constexpr uint8_t knownFaults = Overheat | HumidifierTimeout;
+// Active protection conditions. Nothing latches: each clears by itself.
+enum Fault : uint8_t { Overheat = 1 };
+// Overheat clears once the temperature is this far below the maximum.
+constexpr double overheatHysteresis = 1.0;
+// Without a valid reading for this long, overheat protection stops holding the lamp OFF.
+constexpr uint32_t overheatSensorTimeout = 60000;
 struct Override {
   int mode = ModeAuto;
 };
@@ -93,6 +96,8 @@ public:
     sampleValid =
         std::isfinite(t) && std::isfinite(rh) && t >= -40 && t <= 80 && rh >= 0 && rh <= 100;
     goodSamples = sampleValid ? std::min(3, int(goodSamples) + 1) : 0;
+    if (sampleValid)
+      validAt = now;
   }
   bool sensorReady(uint32_t now) const {
     return sampled && sampleValid && goodSamples >= 3 && uint32_t(now - sampleAt) < 10000;
@@ -103,18 +108,16 @@ public:
     return configured && sampled && sampleValid && uint32_t(now - sampleAt) < 10000 &&
            temperature >= config.max_temperature;
   }
-  bool acknowledge(uint32_t now) {
-    if (!configured || tooHot(now))
-      return false;
-    faults = 0;
-    stop(now);
-    return true;
+  // True while the humidifier is OFF only because it reached its maximum run.
+  bool humidifierResting(uint32_t now) const {
+    return configured && !outputs[Humidifier] && restAfterMaxRun &&
+           uint32_t(now - lastOff[Humidifier]) < uint32_t(config.min_off_seconds) * 1000;
   }
-  // Auto and Off are always accepted; forcing ON requires automation enabled and no faults.
+  // Auto and Off are always accepted; forcing ON requires automation enabled.
   bool setMode(int output, int mode, uint32_t) {
     if (output < 0 || output >= outputCount || mode < ModeAuto || mode > ModeOn || !configured)
       return false;
-    if (mode == ModeOn && (!config.enabled || faults))
+    if (mode == ModeOn && !config.enabled)
       return false;
     if (output == Fan && mode == ModeAuto && overrides[Fan].mode != ModeAuto)
       fanCycleValid = false; // Returning to Auto starts a fresh ON period.
@@ -170,24 +173,25 @@ public:
     isDay = scheduleState.day;
     if (!sampled || uint32_t(now - sampleAt) >= 10000)
       goodSamples = 0;
+    // Overheat holds only the lamp OFF and recovers by itself (with hysteresis).
     if (tooHot(now))
       faults |= Overheat;
-    if (configured && outputs[Humidifier] &&
-        uint32_t(now - onAt[Humidifier]) >= uint32_t(config.humidifier_max_seconds) * 1000)
-      faults |= HumidifierTimeout;
+    else if (!configured || uint32_t(now - validAt) >= overheatSensorTimeout ||
+             (sampleValid && uint32_t(now - sampleAt) < 10000 &&
+              temperature < config.max_temperature - overheatHysteresis))
+      faults &= ~Overheat;
     reason = !configured            ? "unconfigured"
-             : faults               ? "latched fault"
              : !config.enabled      ? "disabled"
              : !scheduleState.known ? "clock invalid"
              : !sensorReady(now)    ? "running without sensor"
              : !clockValid          ? "running saved state"
                                     : "running";
     const bool fanAuto = configured && scheduleState.known && fanCycleOn(now);
-    if (!configured || faults || !config.enabled || !scheduleState.known) {
+    if (!configured || !config.enabled || !scheduleState.known) {
       stop(now);
       return;
     }
-    set(Lamp, resolve(Lamp, scheduleState.lamp), now);
+    set(Lamp, !(faults & Overheat) && resolve(Lamp, scheduleState.lamp), now);
     set(Fan, resolve(Fan, fanAuto), now);
     const double lo = isDay ? config.day_rh_on : config.night_rh_on;
     const double hi = isDay ? config.day_rh_off : config.night_rh_off;
@@ -197,16 +201,25 @@ public:
       mist = humidifierEnabled() && sensorReady(now) && (mist ? humidity < hi : humidity < lo);
     else
       mist = overrides[Humidifier].mode == ModeOn;
+    // After its maximum continuous run the humidifier rests for the minimum OFF
+    // time, then resumes. This affects only the humidifier and needs no acknowledgment.
+    const bool maxRun = outputs[Humidifier] && uint32_t(now - onAt[Humidifier]) >=
+                                                   uint32_t(config.humidifier_max_seconds) * 1000;
+    if (maxRun)
+      mist = false;
     // Minimum OFF time protects restarts in every mode; shutdown never waits.
     if (mist && !outputs[Humidifier] &&
         uint32_t(now - lastOff[Humidifier]) < uint32_t(config.min_off_seconds) * 1000)
       mist = false;
+    if (outputs[Humidifier] != mist)
+      restAfterMaxRun = maxRun;
     set(Humidifier, mist, now);
   }
 
 private:
   uint32_t lastOff[outputCount] = {}, onAt[outputCount] = {};
-  uint32_t fanCycleStart = 0;
+  uint32_t fanCycleStart = 0, validAt = 0;
+  bool restAfterMaxRun = false;
   bool fanCycleValid = false, fanCycleDay = false;
   bool resolve(int output, bool automatic) const {
     return overrides[output].mode == ModeAuto ? automatic : overrides[output].mode == ModeOn;

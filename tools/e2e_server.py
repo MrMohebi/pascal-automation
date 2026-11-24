@@ -57,7 +57,8 @@ def scenario(name: str):
             return {"ok": True}
         if name == "fault":
             state["faults"] = ["overtemperature"]
-            state["outputs"] = [False] * 3
+            state["outputs"][0] = False
+            state["humidifier_resting"] = True
             return {"ok": True}
         paused = False
         delay_commands = 0
@@ -136,8 +137,6 @@ def device():
                     state["outputs"][output] = mode == 1 or (
                         mode == -1 and output != 2
                     )
-                elif command["kind"] == "acknowledge":
-                    state["faults"] = []
                 state["result"] = {
                     "id": command["id"],
                     "status": status,

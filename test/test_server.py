@@ -302,8 +302,10 @@ def test_override_interlocks_and_ack(rig):
         faults=["overtemperature"],
     )
     sync(rig, data)
-    assert client.post("/api/overrides", json=body).status_code == 409
     assert client.get("/api/status").json()["commands"][0]["status"] == "rejected"
+    data.update(config={**configuration(), "enabled": False}, result=None)
+    sync(rig, data)
+    assert client.post("/api/overrides", json=body).status_code == 409
 
 
 def test_invalid_sensor_and_clock(rig):
@@ -423,19 +425,33 @@ def test_persistent_mode_requires_saved_revision_and_matching_mode(
         assert restored["revision"] == 1
 
 
-def test_off_and_auto_allowed_during_faults_but_forced_on_blocked(rig):
+def test_overheat_never_blocks_mode_changes_and_needs_no_acknowledgment(rig):
     client, _ = rig
     data = telemetry()
-    data.update(config=configuration(), profile="day", faults=["overtemperature"])
+    data.update(
+        config=configuration(),
+        profile="day",
+        faults=["overtemperature"],
+        humidifier_resting=True,
+    )
     sync(rig, data)
+    alerts = client.get("/api/status").json()["alerts"]
+    assert "Too hot: lamp held OFF until the temperature drops below 31 °C" in alerts
+    assert any("resting before it resumes" in a for a in alerts)
+    assert not any("Latched" in a for a in alerts)
     base = {"base_revision": 0, "boot_id": "test-boot"}
-    for output in (0, 1, 2):
-        assert (
-            client.post(
-                "/api/overrides", json={**base, "output": output, "mode": 1}
-            ).status_code
-            == 409
-        )
+    assert client.post("/api/faults/acknowledge", json=base).status_code in (404, 405)
+    assert (
+        client.post("/api/overrides", json={**base, "output": 0, "mode": 1}).status_code
+        == 200
+    )
+    sync(rig, data)  # deliver the command so the next change is not blocked
+    data["result"] = {
+        "id": client.get("/api/status").json()["commands"][0]["id"],
+        "status": "applied",
+        "message": "ok",
+    }
+    sync(rig, data)
     assert (
         client.post("/api/overrides", json={**base, "output": 1, "mode": 0}).status_code
         == 200

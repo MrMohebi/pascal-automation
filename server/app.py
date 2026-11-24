@@ -302,10 +302,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         <= cfg[f"{profile}_rh_off"]
                     ):
                         alerts.append("Humidity is outside the configured control band")
-            alerts.extend(
-                "Latched fault: " + fault.replace("_", " ")
-                for fault in reported["faults"]
-            )
+            for fault in reported["faults"]:
+                if fault == "overtemperature" and reported["config"]:
+                    alerts.append(
+                        "Too hot: lamp held OFF until the temperature drops below "
+                        f"{reported['config']['max_temperature'] - 1:g} °C"
+                    )
+                elif fault == "storage_failure":
+                    alerts.append("Storage failure on device: all outputs OFF")
+            if reported.get("humidifier_resting"):
+                alerts.append(
+                    "Humidifier reached its maximum run time and is resting before it resumes"
+                )
         return {
             "online": online,
             "received_at": row["received"] if row else None,
@@ -356,13 +364,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             if kind == "override" and (
                 not current["config"]
-                or (
-                    payload["mode"] == 1
-                    and (not current["config"]["enabled"] or current["faults"])
-                )
+                or (payload["mode"] == 1 and not current["config"]["enabled"])
             ):
                 raise HTTPException(
-                    409, "Forcing ON is blocked by setup or a safety interlock"
+                    409, "Forcing ON needs saved settings and automation enabled"
                 )
             command_id = secrets.token_hex(16)
             conn.execute(
@@ -386,10 +391,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/overrides", dependencies=[Depends(session)])
     def override(body: OverrideChange):
         return enqueue("override", {"output": body.output, "mode": body.mode}, body)
-
-    @app.post("/api/faults/acknowledge", dependencies=[Depends(session)])
-    def acknowledge(body: Versioned):
-        return enqueue("acknowledge", {}, body)
 
     if Path(settings.static_dir).is_dir():
         app.mount(

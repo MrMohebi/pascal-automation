@@ -187,25 +187,39 @@ int main() {
     tests++;
   }
   {
-    // Forced humidifier ignores humidity, but its maximum runtime still latches a fault.
+    // Forced humidifier ignores humidity; after its maximum run it rests, then resumes.
+    // Lamp and fan keep running and nothing latches.
     auto c = ready(10000, 23, 80);
     assert(c.setMode(Humidifier, ModeOn, 10000));
     c.tick(10000, true, 600, epoch);
     assert(c.outputs[Humidifier]);
-    for (uint32_t n = 12500; n <= 40000; n += 2500)
+    for (uint32_t n = 12500; n < 40000; n += 2500)
       run(c, n, true, 600, 23, 80);
-    assert(c.faults & HumidifierTimeout);
-    allOff(c);
+    assert(c.outputs[Humidifier]);
+    run(c, 40000, true, 600, 23, 80);
+    assert(!c.outputs[Humidifier] && c.humidifierResting(40000));
+    assert(c.outputs[Lamp] && c.outputs[Fan] && !c.faults);
+    run(c, 47500, true, 600, 23, 80);
+    assert(!c.outputs[Humidifier]);
+    run(c, 50000, true, 600, 23, 80);
+    assert(c.outputs[Humidifier] && !c.humidifierResting(50000));
     tests++;
   }
   {
+    // Auto humidifier that never reaches its OFF level runs in max-run/rest cycles.
     auto c = ready();
     c.sample(23, 35, 10000);
     c.tick(10000, true, 600, epoch);
+    assert(c.outputs[Humidifier]);
     for (uint32_t n = 12500; n <= 40000; n += 2500)
       run(c, n, true, 600, 23, 35);
-    assert(c.faults & HumidifierTimeout);
-    allOff(c);
+    assert(!c.outputs[Humidifier] && c.outputs[Lamp] && c.outputs[Fan] && !c.faults);
+    assert(std::string(c.reason) == "running");
+    run(c, 50000, true, 600, 23, 35);
+    assert(c.outputs[Humidifier]);
+    // A normal Auto shutdown is not reported as a rest.
+    run(c, 52500, true, 600, 23, 55);
+    assert(!c.outputs[Humidifier] && !c.humidifierResting(52500));
     tests++;
   }
   {
@@ -238,8 +252,8 @@ int main() {
     assert(c.setMode(Fan, ModeOff, 10000));
     assert(c.setMode(Fan, ModeAuto, 10000));
     c = ready();
-    c.faults = Overheat;
-    assert(!c.setMode(Lamp, ModeOn, 10000));
+    c.faults = Overheat; // Being too hot never blocks a mode change.
+    assert(c.setMode(Lamp, ModeOn, 10000));
     assert(c.setMode(Lamp, ModeOff, 10000));
     c = ready();
     assert(c.setMode(Humidifier, ModeOn, 30000)); // No sensor needed to force ON.
@@ -267,7 +281,8 @@ int main() {
     tests++;
   }
   {
-    // Sensor never connected: lamp and fan run, faults can be acknowledged, mist can be forced.
+    // Sensor never connected: lamp and fan run, mist can be forced, and a stale
+    // overheat condition clears once there has been no reading for a minute.
     Controller c;
     c.begin(0);
     assert(c.apply(example(), 0));
@@ -275,27 +290,37 @@ int main() {
     assert(!c.sensorReady(20000));
     assert(c.outputs[Lamp] && c.outputs[Fan] && !c.outputs[Humidifier]);
     c.faults = Overheat;
-    c.tick(20000, true, 600, epoch);
-    allOff(c);
-    assert(c.acknowledge(20000) && !c.faults);
-    assert(c.setMode(Humidifier, ModeOn, 20000));
-    c.tick(20000, true, 600, epoch);
+    c.tick(30000, true, 600, epoch);
+    assert(c.faults && !c.outputs[Lamp] && c.outputs[Fan]);
+    c.tick(80000, true, 600, epoch);
+    assert(!c.faults && c.outputs[Lamp]);
+    assert(c.setMode(Humidifier, ModeOn, 80000));
+    c.tick(80000, true, 600, epoch);
     assert(c.outputs[Humidifier]);
     tests++;
   }
   {
-    // Overtemperature latches everything OFF, including forced outputs.
+    // Overtemperature holds only the lamp OFF (even when forced ON) and recovers by
+    // itself once the temperature is 1 C below the maximum.
     auto c = ready();
     assert(c.setMode(Lamp, ModeOn, 10000));
     c.tick(10000, true, 600, epoch);
+    assert(c.outputs[Lamp]);
     run(c, 12500, true, 600, 32);
-    allOff(c);
     assert(c.faults & Overheat);
-    assert(!c.acknowledge(12500));
-    run(c, 15000, true, 600, 25);
-    allOff(c);
-    assert(c.acknowledge(15000));
-    assert(!c.faults);
+    assert(!c.outputs[Lamp] && c.outputs[Fan]);
+    run(c, 15000, true, 600, 31.5);
+    assert((c.faults & Overheat) && !c.outputs[Lamp]);
+    run(c, 17500, true, 600, 30.9);
+    assert(!c.faults && c.outputs[Lamp]);
+    // A failed reading while hot keeps the lamp OFF until a minute without readings.
+    run(c, 20000, true, 600, 33);
+    assert(!c.outputs[Lamp]);
+    c.sample(NAN, NAN, 22500);
+    c.tick(22500, true, 600, epoch);
+    assert((c.faults & Overheat) && !c.outputs[Lamp]);
+    c.tick(80000, true, 600, epoch);
+    assert(!c.faults && c.outputs[Lamp]);
     tests++;
   }
   {
@@ -326,18 +351,6 @@ int main() {
     // Restored saved schedule and forced lamp apply right away, sensor or not.
     reboot.tick(0, false, 0, 0);
     assert(reboot.outputs[Lamp] && reboot.overrides[Lamp].mode == ModeOn);
-    tests++;
-  }
-  {
-    auto c = ready();
-    c.faults = Overheat;
-    Controller reboot;
-    reboot.apply(c.config, 0);
-    reboot.faults = c.faults;
-    reboot.sample(23, 35, 0);
-    reboot.tick(0, true, 600, epoch);
-    allOff(reboot);
-    assert(reboot.faults & Overheat);
     tests++;
   }
   {

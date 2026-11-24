@@ -7,7 +7,7 @@
 3. Enter actual, confirmed husbandry targets and schedules; do not use unit-test fixture values as care guidance. Test with automation disabled, then inspect simulated control decisions.
 4. Disconnect the sensor: all commanded outputs should turn off. Reconnect: three consecutive valid readings are required before operation can resume.
 5. Test night/day changes, midnight-crossing schedules, both saved light selections, and return to Auto. Verify cold boot without network restores the saved profile/light states after sensor recovery; establish time and verify schedules resume.
-6. Test overtemperature and runtime limits using controlled test inputs away from the animal. Faults must survive reset and remain off until acknowledged with a recovered sensor and temperature below the limit.
+6. Test overtemperature and runtime limits using controlled test inputs away from the animal. At the maximum temperature only the lamp must switch OFF, and it must return once the temperature is 1 °C below the limit. The humidifier must pause for its minimum OFF time after its maximum run, then resume. Neither condition needs acknowledgment.
 7. Provision Wi-Fi/HTTPS and compare the board's serial status with the dashboard. Change settings and light selections from the dashboard and verify the OLED/USB status reflects the acknowledged revision. Reboot and confirm the same revision and selections return.
 8. Remove the network connection without removing board power: local control must continue while the dashboard becomes offline. Restart the server and confirm existing history remains. Do not confuse a synthetic test device with the physical ESP32.
 

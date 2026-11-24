@@ -160,20 +160,19 @@ test("server connection loss disables controls", async ({ page }) => {
   ).toBeDisabled();
 });
 
-test("faults appear and acknowledge through the real API", async ({
+test("too hot only holds the lamp OFF and needs no acknowledgment", async ({
   page,
   request,
 }) => {
   await request.post("/__test/scenario/fault");
   await expect(
-    page.getByText("Latched fault: overtemperature", { exact: true }),
+    page.getByText("Too hot: lamp held OFF until the temperature drops below 31 °C"),
   ).toBeVisible({ timeout: 15000 });
-  await page
-    .getByRole("button", { name: "Acknowledge resolved faults" })
-    .click();
-  await expect(
-    page.getByText("Latched fault: overtemperature", { exact: true }),
-  ).not.toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Too hot · OFF until below 31 °C")).toBeVisible();
+  await expect(page.getByText("Resting after maximum run · resumes shortly")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Acknowledge/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Lamp On", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Lamp Off", exact: true })).toBeEnabled();
 });
 
 
@@ -185,18 +184,6 @@ test("saved fan selection survives restart without a clock", async ({ page, requ
   await expect(page.getByText("Forced OFF · saved on device")).toBeVisible();
   await expect(page.getByRole("button", { name: "Fan Off", exact: true })).toHaveClass(/selected/);
   await expect(page.getByText("Clock unavailable; using saved profile and automatic lamp state until time returns")).toBeVisible();
-});
-
-test("forcing ON is unavailable during a fault but OFF still works", async ({
-  page,
-  request,
-}) => {
-  await request.post("/__test/scenario/fault");
-  await expect(
-    page.getByText("Latched fault: overtemperature", { exact: true }),
-  ).toBeVisible({ timeout: 15000 });
-  await expect(page.getByRole("button", { name: "Lamp On", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Lamp Off", exact: true })).toBeEnabled();
 });
 
 test("chart hover follows the pointer on a wide, letterboxed chart", async ({ page }) => {

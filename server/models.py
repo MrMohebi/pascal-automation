@@ -82,9 +82,11 @@ class Telemetry(Model):
     display_ok: bool
     storage_ok: bool
     outputs: list[bool] = Field(min_length=3, max_length=3)
+    # "humidifier_runtime" is only sent by older firmware that latched it.
     faults: list[
         Literal["overtemperature", "humidifier_runtime", "storage_failure"]
     ] = Field(max_length=3)
+    humidifier_resting: bool = False
     overrides: list[OverrideState] = Field(min_length=3, max_length=3)
     fan_next_change_s: int | None = Field(default=None, ge=0, le=172800)
     result: CommandResult | None = None
