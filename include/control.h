@@ -69,7 +69,7 @@ public:
   bool configured = false, outputs[outputCount] = {false, false, false}, isDay = false;
   double temperature = NAN, humidity = NAN;
   uint8_t faults = 0, goodSamples = 0;
-  uint32_t sampleAt = 0;
+  uint32_t sampleAt = 0, failedReads = 0;
   bool sampled = false, sampleValid = false;
   Override overrides[outputCount];
   ScheduleState scheduleState;
@@ -88,16 +88,24 @@ public:
     fanCycleValid = false; // Restart the fan cycle with the new timings.
     return true;
   }
+  // A failed DHT22 read (NaN or out of range) is common and is ignored: the last valid
+  // reading stays in use until it is 10 s old, so up to three failures in a row are
+  // tolerated. sampleAt is the time of the last valid reading.
   void sample(double t, double rh, uint32_t now) {
+    sampled = true;
+    if (!(std::isfinite(t) && std::isfinite(rh) && t >= -40 && t <= 80 && rh >= 0 &&
+          rh <= 100)) {
+      failedReads++;
+      return;
+    }
+    if (!sampleValid || uint32_t(now - sampleAt) >= 10000)
+      goodSamples = 0; // Recovering from an outage needs three fresh readings again.
     temperature = t;
     humidity = rh;
     sampleAt = now;
-    sampled = true;
-    sampleValid =
-        std::isfinite(t) && std::isfinite(rh) && t >= -40 && t <= 80 && rh >= 0 && rh <= 100;
-    goodSamples = sampleValid ? std::min(3, int(goodSamples) + 1) : 0;
-    if (sampleValid)
-      validAt = now;
+    sampleValid = true;
+    validAt = now;
+    goodSamples = std::min(3, int(goodSamples) + 1);
   }
   bool sensorReady(uint32_t now) const {
     return sampled && sampleValid && goodSamples >= 3 && uint32_t(now - sampleAt) < 10000;

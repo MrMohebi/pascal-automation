@@ -358,6 +358,27 @@ def test_bad_readings_create_history_gaps(rig):
     assert point["temperature"] is None and point["humidity"] is None
 
 
+def test_one_bad_report_does_not_hide_a_bucket(rig):
+    client, settings = rig
+    sync(rig)
+    bucket = int(time.time() // 60) * 60 - 600
+    with sqlite3.connect(settings.database) as conn:
+        for offset, row in (
+            (5, (22.0, 50.0, 1)),
+            (15, (None, None, 0)),
+            (25, (24.0, 60.0, 1)),
+        ):
+            conn.execute(
+                "INSERT INTO telemetry(received,temperature,humidity,sensor_ok,outputs,simulated) VALUES(?,?,?,?,?,?)",
+                (bucket + offset, *row, "[]", 1),
+            )
+    point = next(
+        p for p in client.get("/api/history").json()["points"] if p["time"] == bucket
+    )
+    assert point["sensor_ok"] == 1
+    assert point["temperature"] == 23.0 and point["humidity"] == 55.0
+
+
 def test_secure_session_cookie(tmp_path):
     settings = Settings(
         str(tmp_path / "secure.sqlite"),

@@ -215,6 +215,9 @@ int main() {
       run(c, n, true, 600, 23, 35);
     assert(!c.outputs[Humidifier] && c.outputs[Lamp] && c.outputs[Fan] && !c.faults);
     assert(std::string(c.reason) == "running");
+    for (uint32_t n = 42500; n < 50000; n += 2500)
+      run(c, n, true, 600, 23, 35);
+    assert(!c.outputs[Humidifier]);
     run(c, 50000, true, 600, 23, 35);
     assert(c.outputs[Humidifier]);
     // A normal Auto shutdown is not reported as a rest.
@@ -262,21 +265,30 @@ int main() {
     tests++;
   }
   {
-    // Sensor failure only pauses Auto humidity control; recovery needs three good samples.
+    // Up to three failed reads in a row keep the last valid reading; a 10 s outage only
+    // pauses Auto humidity control, and recovery needs three good samples.
     auto c = ready(10000, 23, 35);
     c.tick(10000, true, 600, epoch);
     assert(c.outputs[Humidifier]);
-    c.sample(NAN, 35, 12500);
-    c.tick(12500, true, 600, epoch);
+    for (uint32_t n = 12500; n <= 17500; n += 2500) {
+      c.sample(NAN, NAN, n);
+      c.tick(n, true, 600, epoch);
+      assert(c.sensorReady(n) && c.outputs[Humidifier] && c.humidity == 35);
+      assert(std::string(c.reason) == "running");
+    }
+    c.sample(NAN, 35, 20000);
+    c.tick(20000, true, 600, epoch);
+    assert(!c.sensorReady(20000) && c.failedReads == 4);
     assert(c.outputs[Lamp] && c.outputs[Fan] && !c.outputs[Humidifier]);
     assert(std::string(c.reason) == "running without sensor");
-    c.sample(23, 35, 15000);
-    c.tick(15000, true, 600, epoch);
-    c.sample(23, 35, 17500);
-    c.tick(17500, true, 600, epoch);
-    assert(!c.outputs[Humidifier]);
+    c.sample(23, 35, 22500);
+    c.tick(22500, true, 600, epoch);
     c.sample(23, 35, 25000);
     c.tick(25000, true, 600, epoch);
+    assert(!c.outputs[Humidifier]);
+    c.sample(150, 35, 27500); // Out-of-range reading counts as a failed read.
+    c.sample(23, 35, 30000);
+    c.tick(30000, true, 600, epoch);
     assert(c.outputs[Humidifier] && std::string(c.reason) == "running");
     tests++;
   }

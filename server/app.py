@@ -332,7 +332,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             points = [
                 dict(row)
                 for row in conn.execute(
-                    "SELECT CAST(received / ? AS INTEGER) * ? AS time, AVG(temperature) AS temperature, AVG(humidity) AS humidity, MIN(sensor_ok) AS sensor_ok, MIN(simulated) AS simulated FROM telemetry WHERE received>=? GROUP BY CAST(received / ? AS INTEGER) ORDER BY time",
+                    "SELECT CAST(received / ? AS INTEGER) * ? AS time, AVG(temperature) AS temperature, AVG(humidity) AS humidity, MAX(sensor_ok) AS sensor_ok, MIN(simulated) AS simulated FROM telemetry WHERE received>=? GROUP BY CAST(received / ? AS INTEGER) ORDER BY time",
                     (bucket, bucket, time.time() - hours * 3600, bucket),
                 )
             ]
