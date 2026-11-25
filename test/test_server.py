@@ -537,3 +537,11 @@ def test_force_on_allowed_without_sensor(rig):
     assert client.post("/api/overrides", json=body).status_code == 200
     alerts = client.get("/api/status").json()["alerts"]
     assert any("overheat protection inactive" in a for a in alerts)
+
+
+def test_sensor_reading_up_to_a_minute_old_is_healthy(rig):
+    data = telemetry()
+    data.update(sample_age_ms=45000)
+    assert sync(rig, data).status_code == 200
+    data.update(sample_age_ms=60000)
+    assert sync(rig, data).status_code == 422

@@ -46,7 +46,7 @@ GitHub Actions builds and tests the server image on pushes to `main`, then publi
 
 ## Operation
 
-- DHT22 reads every 2.5 seconds. Three consecutive valid readings are required. Any invalid reading, or ten seconds without a fresh sample, inhibits all four outputs.
+- DHT22 reads every 2.5 seconds. Three valid readings are needed after startup or an outage. Failed reads are ignored and the last valid reading is used for up to 60 seconds. After that the sensor counts as unavailable: humidifier Auto pauses, and the lamp and fan keep running.
 - Heater and humidifier turn ON strictly below their ON thresholds and OFF at or above their OFF thresholds. Within the band they retain their previous states. Minimum OFF time applies to restart; shutdown never waits for a minimum run time.
 - Day/night climate profiles and both light schedules support midnight crossings. Equal ON/OFF times are rejected rather than interpreted as always-on.
 - Light ON/OFF selections are saved on the ESP32 and remain selected across schedule transitions, network loss, and restarts until you change them or choose Auto. Configuration changes preserve these selections. Safety interlocks always override the requested state.

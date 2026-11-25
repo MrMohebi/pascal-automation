@@ -50,8 +50,11 @@ inline bool within(int minute, int start, int end) {
 enum Fault : uint8_t { Overheat = 1 };
 // Overheat clears once the temperature is this far below the maximum.
 constexpr double overheatHysteresis = 1.0;
+// The last valid reading stays in use this long. Climate changes slowly, so a reading
+// up to a minute old is fine and rides out runs of failed DHT22 reads.
+constexpr uint32_t sensorFreshMs = 60000;
 // Without a valid reading for this long, overheat protection stops holding the lamp OFF.
-constexpr uint32_t overheatSensorTimeout = 60000;
+constexpr uint32_t overheatSensorTimeout = sensorFreshMs;
 struct Override {
   int mode = ModeAuto;
 };
@@ -89,8 +92,8 @@ public:
     return true;
   }
   // A failed DHT22 read (NaN or out of range) is common and is ignored: the last valid
-  // reading stays in use until it is 10 s old, so up to three failures in a row are
-  // tolerated. sampleAt is the time of the last valid reading.
+  // reading stays in use until it is sensorFreshMs old. sampleAt is the time of the
+  // last valid reading.
   void sample(double t, double rh, uint32_t now) {
     sampled = true;
     if (!(std::isfinite(t) && std::isfinite(rh) && t >= -40 && t <= 80 && rh >= 0 &&
@@ -98,7 +101,7 @@ public:
       failedReads++;
       return;
     }
-    if (!sampleValid || uint32_t(now - sampleAt) >= 10000)
+    if (!sampleValid || uint32_t(now - sampleAt) >= sensorFreshMs)
       goodSamples = 0; // Recovering from an outage needs three fresh readings again.
     temperature = t;
     humidity = rh;
@@ -108,12 +111,12 @@ public:
     goodSamples = std::min(3, int(goodSamples) + 1);
   }
   bool sensorReady(uint32_t now) const {
-    return sampled && sampleValid && goodSamples >= 3 && uint32_t(now - sampleAt) < 10000;
+    return sampled && sampleValid && goodSamples >= 3 && uint32_t(now - sampleAt) < sensorFreshMs;
   }
-  // A fresh valid reading at or above the maximum. Without a sensor this is never true,
+  // A recent valid reading at or above the maximum. Without a sensor this is never true,
   // so overheat protection only works while the DHT22 is connected.
   bool tooHot(uint32_t now) const {
-    return configured && sampled && sampleValid && uint32_t(now - sampleAt) < 10000 &&
+    return configured && sampled && sampleValid && uint32_t(now - sampleAt) < sensorFreshMs &&
            temperature >= config.max_temperature;
   }
   // True while the humidifier is OFF only because it reached its maximum run.
@@ -179,13 +182,13 @@ public:
   void tick(uint32_t now, bool clockValid, int minute, int64_t) {
     updateSchedule(clockValid, minute);
     isDay = scheduleState.day;
-    if (!sampled || uint32_t(now - sampleAt) >= 10000)
+    if (!sampled || uint32_t(now - sampleAt) >= sensorFreshMs)
       goodSamples = 0;
     // Overheat holds only the lamp OFF and recovers by itself (with hysteresis).
     if (tooHot(now))
       faults |= Overheat;
     else if (!configured || uint32_t(now - validAt) >= overheatSensorTimeout ||
-             (sampleValid && uint32_t(now - sampleAt) < 10000 &&
+             (sampleValid && uint32_t(now - sampleAt) < sensorFreshMs &&
               temperature < config.max_temperature - overheatHysteresis))
       faults &= ~Overheat;
     reason = !configured            ? "unconfigured"
